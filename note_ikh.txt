@@ -1,0 +1,358 @@
+/**2022.11.23
+* 정리
+*
+* D:\work\CYPRESS\bt\cyw920706\mtb_shared\wiced_btsdk\dev-kit\libraries\btsdk-rfcomm\release-v3.3.0\COMPONENT_spp_lib\spp_lib.c
+
+* uart protocol pdf문서
+* file:///D:/work/CYPRESS/bt/.doc/spec/0.Core/UART%20Communication%20Protocol%20for%20SPP_iAP%20V1.0(j_stepan).pdf
+* file:///D:/work/CYPRESS/bt/.doc/spec/0.Core/UART%20Communication%20Protocol%20for%20SPP_iAP%20V2.1.pdf
+
+* 빅솔론 코드
+* svn://211.168.69.43/repos/Module/20706/ModusToolBox/Bixolon
+* svn://211.168.69.43/repos/SKB_RCU/MR-BRS101/BEE2-SDK-RCU-v1.3.4/board/evb/rcu
+
+* 인터벌 윈도우, 바이패스, cmd(명령어)
+
+
+* WORK - 1130(수) 오후 점검
+1.cyw920706
+ㄴrfcomm1108 code merge(1.puart, 2.rfcomm spp, 3.gpio)
+ㄴSW 버튼 enable						(o)
+ㄴSW Control한번 누르면 인터벌 깜빡임 주기 	(o)
+ㄴ점등SW								()
+ㄴSwitch Button(1>2>3) 점멸 Blinking 주기 변화  (x)
+ㄴ전원on/off해도 status 기억 nvram			(x)
+ㄴ누르면 스탑 및 status 초기화
+
+2.엑셀 함수정리
+
+3.SPP 라이브러리 분리
+ㄴ메이크파일
+
+4.WICED플래폼 삭제 헤더파일 날리기,
+ㄴSPP.h 만들고 관련 내용 정리
+ㄴ필요없는 코드 지우고 시작
+
+5.puart, 에어 구현, 
+
+
+*/
+////////////////////////////////////////////////////////////////////////////////////////////////
+ 
+
+// Please see the User Documentation to reference the valid pins.
+// CTS and RTS are defined non-zero #if PUART_RTS_CTS_FLOW, see wiced_platform.h 
+ㅁwiced_hal_puart_select_uart_pads() : UART 하드웨어에서 사용할 TX/RX 및 선택적 CTS/RTS 핀(P<pin>)을 선택
+
+ㅁwiced_set_debug_uart() : 디버그 추적에 사용할 UART를 지정 
+ └▷WICED_ROUTE_DEBUG_NONE  =  0x00, /**< No traces */ : // Set the debug uart as WICED_ROUTE_DEBUG_NONE to get rid of prints
+ └▷WICED_ROUTE_DEBUG_TO_WICED_UART, /**< send debug strings in formatted AIROC HCI messages over HCI UART to ClientControl or MCU */
+ └▷WICED_ROUTE_DEBUG_TO_HCI_UART,   /**< send debug strings as plain text to HCI UART, used by default if wiced_set_debug_uart() not called */ :Set to HCI to see traces on HCI uart - default if no call to wiced_set_debug_uart()
+ └▷WICED_ROUTE_DEBUG_TO_DBG_UART,   /**< Deprecated */
+ └▷WICED_ROUTE_DEBUG_TO_PUART       /**< send debug strings as plain text to the peripheral uart (PUART) */ :플랫폼에 PUART가 있는 경우 주변 uart(puart)에서 추적을 보려면 PUART로 설정합니다.
+
+ㅁwiced_hal_puart_init() : 기본 구성 매개 변수를 사용하여 주변 장치 UART 인터페이스를 초기화합니다. 
+						  이것은 PUART의 서비스를 사용하기 전에 부팅 시 한 번만 호출되어야 합니다. 기본 보드 속도는 115200Bd.
+						  이것은 이 초기화 함수 후에 "wiceed_hal_puart_configuration()"을 호출하여 변경할 수 있습니다.
+ㅁwiced_hal_puart_configuration() : 수신된 값에 따라 패리티 및 중지 비트를 업데이트
+
+ㅁwiced_transport_init(&transport_cfg) : 전송을 초기화하고 구성합니다. 또한 전송 탐지 및 데이터 수신 시 호출될 핸들러를 등록합니다.
+
+
+1-APPLICATION_START() : APP의 진입점, 장치 구성을 설정하고 BT 스택 초기화를 시작합니다. 실제 애플리케이션 초기화는 스택이 BT 디바이스가 준비되었다고 보고할 때 발생합니다.  
+  ┗▶wiced_hal_puart_init() : 
+  ┗▶wiced_transport_init(&transport_cfg) : 전송을 초기화하고 구성합니다. 또한 전송 탐지 및 데이터 수신 시 호출될 핸들러를 등록합니다.
+  ┗▶wiced_bt_stack_init() : 스택 초기화하고 Management Callback을 등록한다, 스택에 callback과 설정을 등록한다
+    └▷app_management_callback() : 
+ 
+ 1-1 app_management_callback()
+ -BTM_ENABLED_EVT
+ -BTM_DISABLED_EVT
+ 
+ 
+ 
+ 
+2-application_init() : SPP application initialization is executed after BT stack initialization is completed.
+  ┗▶wiced_bt_app_init() : Wiced bt App 초기화
+  ┗▶rtc_init() :
+  ┗▶wiced_bt_app_hal_init() : Initializes the GPIO driver, Wiced BT App Common HAL Initialization
+    └▷mia_init() : 
+    └▷gpio_init() : 
+    └▷mia_enableMiaInterrupt(TRUE) : 
+    └▷mia_enableLhlInterrupt(TRUE) : 
+    └▷SETUP_APP_FOR_DEBUG_IF_DEBUG_ENABLED();
+    └▷BUSY_WAIT_TILL_MANUAL_CONTINUE_IF_DEBUG_ENABLED();
+  ┗▶app_write_eir() : 
+  ┗▶wiced_bt_rfcomm_init() : RFCOMM에서 사용할 개인 풀을 할당한다 //Initialize RFCOMM. 애플리케이션 버퍼 풀을 사용하지 않을 것이며 wiceed_bt_cfg.c에 구성된 스택 풀을 사용할 것입니다.
+  ┗▶wiced_bt_spp_startup(&spp_reg) : SPP 라이브러리를 초기화하고 RFCOMM 서비스를 시작!  
+  ┗▶wiced_bt_dev_register_hci_trace(app_trace_callback) : 스택의 상위 계층과 BT 스택의 하위 계층을 갖는 칩의 컨트롤러 부분 사이에는 가상 HCI 인터페이스가 있다.
+    └▷app_trace_callback() :                              스택에 등록하여 모든 HCI 명령, 이벤트 및 데이터를 수신합니다.
+
+
+ㅁwiced_hal_gpio_configure_pin() : GPIO 핀 설정 함수/* Configure a GPIO PIN as input and initial outvalue as high */
+
+ㅁwiced_hal_gpio_register_pin_for_interrupt() :
+
+ㅁwiced_init_timer() : rx 데이터 흐름 제어에 사용할 init 타이머
+ ┗▶app_tx_ack_timeout() : 대량의 데이터를 전송하는 동안 app_tx_ack_timeout()가 주기적으로 호출됩니다.
+   └▷app_send_data() : 
+
+
+
+
+
+//rfcomm_scn > 애플리케이션이 SDP에 게시할 RFCOMM SCN을 선택합니다. 라이브러리에서 사용할 동일한 값을 전달해야 합니다. SPP_RFCOMM_SCN
+//rfcomm_mtu > RFCOMM 계층에서 사용할 MTU. MAX_TX_BUFFER
+1. app_trace_callback() : 프로토콜 추적 전달
+
+
+
+
+
+3. app_interrupt_handler() : 데이터 전송을 시작하는 함수를 테스트합니다.
+ㄴapp_send_data();
+
+4. wiced_hal_gpio_get_pin_interrupt_status() : Get the interrupt status of a pin
+
+
+
+5. app_read_nvram() : NVRAM에서 데이터를 읽고, 전달된 버퍼를 반환합니다
+ㄴwiced_hal_read_nvram() : NVRAM으로부터 데이터를 읽는다 
+
+6. app_write_nvram() : NVRAM에 정보를 저장하기 위해 NVRAM 쓰기 기능이 호출됩니다.
+
+7. spp_bt_remote_name_callback() : *
+
+8. spp_rx_data_callback : EA 세션을 통해 수신된 프로세스 데이터.  
+호스트에 전달할 버퍼를 할당할 수 있으면 TRUE를 반환합니다.
+
+
+
+spp_connection_up_callback
+spp_connection_down_callback
+app_timeout
+
+
+app_write_eir() : 확장 조회 응답 데이터를 준비합니다. 현재 버전은 장치 이름 및 16비트 SPP 서비스를 게시합니다.
+ㄴ wiced_bt_get_buffer_count공용 풀에서 버퍼를 할당합니다. 공용 풀은 애플리케이션의 wiceed_bt_cfg_buf_pool_t를 사용하여 지정해야 합니다.
+ㄴ wiced_bt_dev_write_eir : Write EIR data to controller.
+
+application_init() : 블루투스 스택 초기화가 완료된 후 SPP 애플리케이션 초기화가 실행됩니다.
+ㄴ wiced_bt_app_init : /* Initialize wiced app */
+ㄴ rtc_init(); :  /* Initialize the RTC block */
+ㄴ
+/* Initializes the GPIO driver */
+wiced_bt_app_hal_init();
+wiced_hal_gpio_configure_pin(WICED_GPIO_BUTTON, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
+wiced_hal_gpio_register_pin_for_interrupt(WICED_GPIO_BUTTON, app_interrupt_handler, NULL);
+
+*13. APPLICATION_START()
+
+
+
+
+
+
+/** Change in power management status  (used by BTM_POWER_MANAGEMENT_STATUS_EVT notication) */
+typedef struct {
+    uint8_t                             *bd_addr;       /**< BD Address of remote */
+    wiced_bt_dev_power_mgmt_status_t    status;         /**< PM status */
+    uint16_t                            value;          /**< Additional mode data */
+    uint8_t                             hci_status;     /**< HCI status */
+} wiced_bt_power_mgmt_notification_t;
+
+typedef union
+{
+wiced_bt_power_mgmt_notification_t  power_mgmt_notification;            /**< Data for BTM_POWER_MANAGEMENT_STATUS_EVT */
+}wiced_bt_management_evt_data_t
+
+p_power_mgmt_notification = &p_event_data->power_mgmt_notification;
+21. BTM_POWER_MANAGEMENT_STATUS_EVT
+BTM_파워_매니지먼트_스태터스_이벤트
+p_power_mgmt_notification = &p_event_data-> 
+
+포인터로 > 
+p_power_mgmt_notification = &p_event_data->power_mgmt_notifcation;
+
+-----------------
+//extern BOOL32 wiced_hal_puart_select_uart_pads(UINT8 rxdPin, UINT8 txdPin, UINT8 ctsPin, UINT8 rtsPin);
+
+#ifdef CYW20706A2
+    wiced_hal_puart_init();
+	WICED_BT_TRACE("*************sdsdsdsdDefined CYW20706A2, Starting wiced_hal_puart_init()!!*************\n");  
+  #if PUART_RTS_CTS_FLOW
+    // special setup to enable flow control pins
+    WICED_BT_TRACE("*************PUART_RTS_CTS_FLOW???*************\n");
+    platform_puart_flow_control_pin_init();
+  #endif
+  
+    #if PUART_RTS_CTS_FLOW
+    // special setup to enable flow control pins
+    platform_puart_flow_control_pin_init() : 흐름 제어 핀을 활성화하기 위한 특수 설정
+	
+	if(!wiced_hal_puart_select_uart_pads( WICED_PUART_RXD, WICED_PUART_TXD, WICED_PUART_CTS, WICED_PUART_RTS))
+    {
+        WICED_BT_TRACE("wiced_hal_puart_select_uart_pads failed!!\n");
+    }
+	
+
+
+gpio_test_led():
+ ㄴwiced_init_timer( &seconds_timer, &seconds_app_timer_cb, 0, WICED_SECONDS_PERIODIC_TIMER )
+ ㄴwiced_start_timer( &seconds_timer, APP_TIMEOUT_IN_SECONDS_B ) : 타이머를 시작하기 전에 타이머를 초기화해야 합니다. 
+                                                                타이머를 실행하면 칩의 저전력 모드를 방해합니다. 
+
+                                                                저전력 모드를 유지하는 시간은 실행 중인 타이머의 시간 초과 값에 따라 달라집니다. 
+                                                                즉, 절전 시간은 활성 타이머 중 다음 타이머가 만료되는 시간에 따라 달라집니다.
+
+
+seconds_app_timer_cb()
+ㄴwiced_hal_gpio_set_pin_output() : Sets the output value of a pin. 
+
+
+
+
+
+
+
+
+====
+wiced_platform_register_button_callback
+wiced_hal_gpio_register_pin_for_interrupt
+
+#ifdef HCI_TRACE_OVER_TRANSPORT
+
+1. app_trace_callback() : 프로토콜 추적 전달
+
+
+2. app_tx_ack_timeout() : 대량의 데이터를 전송하는 동안 app_tx_ack_timeout()가 주기적으로 호출됩니다.
+ㄴapp_send_data();
+
+
+3. app_interrupt_handler() : 데이터 전송을 시작하는 함수를 테스트합니다.
+ㄴapp_send_data();
+
+4. wiced_hal_gpio_get_pin_interrupt_status() : Get the interrupt status of a pin
+
+
+
+5. app_read_nvram() : NVRAM에서 데이터를 읽고, 전달된 버퍼를 반환합니다
+ㄴwiced_hal_read_nvram() : NVRAM으로부터 데이터를 읽는다 
+
+6. app_write_nvram() : NVRAM에 정보를 저장하기 위해 NVRAM 쓰기 기능이 호출됩니다.
+
+7. spp_bt_remote_name_callback() : *
+
+8. spp_rx_data_callback : EA 세션을 통해 수신된 프로세스 데이터.  
+호스트에 전달할 버퍼를 할당할 수 있으면 TRUE를 반환합니다.
+
+
+
+spp_connection_up_callback
+spp_connection_down_callback
+app_timeout
+
+
+app_write_eir() : 확장 조회 응답 데이터를 준비합니다. 현재 버전은 장치 이름 및 16비트 SPP 서비스를 게시합니다.
+ㄴ wiced_bt_get_buffer_count공용 풀에서 버퍼를 할당합니다. 공용 풀은 애플리케이션의 wiceed_bt_cfg_buf_pool_t를 사용하여 지정해야 합니다.
+ㄴ wiced_bt_dev_write_eir : Write EIR data to controller.
+
+application_init() : 블루투스 스택 초기화가 완료된 후 SPP 애플리케이션 초기화가 실행됩니다.
+ㄴ wiced_bt_app_init : /* Initialize wiced app */
+ㄴ rtc_init(); :  /* Initialize the RTC block */
+ㄴ
+/* Initializes the GPIO driver */
+wiced_bt_app_hal_init();
+wiced_hal_gpio_configure_pin(WICED_GPIO_BUTTON, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
+wiced_hal_gpio_register_pin_for_interrupt(WICED_GPIO_BUTTON, app_interrupt_handler, NULL);
+
+*13. APPLICATION_START()
+
+
+14. wiced_bt_rfcomm_init() : Initialize RFCOMM. 애플리케이션 버퍼 풀을 사용하지 않을 것이며 wiceed_bt_cfg.c에 구성된 스택 풀을 사용할 것입니다.
+ㄴwiced_bt_rfcomm_init : 이 함수는 RFCOMM에서 사용할 개인 풀을 할당합니다.
+
+
+
+/** Change in power management status  (used by BTM_POWER_MANAGEMENT_STATUS_EVT notication) */
+typedef struct {
+    uint8_t                             *bd_addr;       /**< BD Address of remote */
+    wiced_bt_dev_power_mgmt_status_t    status;         /**< PM status */
+    uint16_t                            value;          /**< Additional mode data */
+    uint8_t                             hci_status;     /**< HCI status */
+} wiced_bt_power_mgmt_notification_t;
+
+typedef union
+{
+wiced_bt_power_mgmt_notification_t  power_mgmt_notification;            /**< Data for BTM_POWER_MANAGEMENT_STATUS_EVT */
+}wiced_bt_management_evt_data_t
+
+p_power_mgmt_notification = &p_event_data->power_mgmt_notification;
+21. BTM_POWER_MANAGEMENT_STATUS_EVT
+BTM_파워_매니지먼트_스태터스_이벤트
+p_power_mgmt_notification = &p_event_data-> 
+
+포인터로 > 
+p_power_mgmt_notification = &p_event_data->power_mgmt_notifcation;
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+SPP 애플리케이션은 SPP 프로파일 라이브러리를 사용하여 BR/EDR을 통해 SPP 데이터를 설정, 종료, 전송 및 수신합니다. 
+
+이 샘플은 단일 SPP 연결을 지원합니다.
+
+Following compilation flags are important for testing
+다음 컴파일 플래그는 테스트에 중요합니다.
+ 
+*HCI_TRACE_OVER_TRANSPORT
+configures HCI traces to be routed to the WICED HCI interface
+HCI traces가 WICEED HCI 인터페이스로 라우팅되도록 구성합니다.
+
+*WICEED_BT_TRACE_ENABLE
+enables WICED_BT_TRACEs.  
+WICED_BT_TRACE를 활성화합니다.
+to build with _debug version of the library
+_debug version의 라이브러리로 빌드하도록 
+라이브러리의 debug 버전으로 빌드하도록 makefile.mk을 수정할 수도 있습니다.
+
+*SEND_DATA_ON_INTERREPT - 정의된 경우 앱은 애플리케이션 버튼을 누르면 1Meg의 데이터를 전송합니다.
+*SEND_DATA_ON_TIMEOUT - 정의된 경우 세션이 가동되는 동안 앱이 초당 4바이트를 전송합니다.
+*LOOPBACK_DATA - 활성화된 경우 앱이 수신된 데이터를 다시 보냅니다.
+
+To demonstrate the app, work through the following steps.
+
+Open the BT/BLE Profile Client Control application and open the port for WICED HCI for the device.
+BT/BLE Profile Client Control 응용 프로그램을 열고 장치의 WICEED HCI 포트를 엽니다.
+
+
+애플리케이션에 구성된 기본 보드 속도는 BSP HCI_UART_DEAULT_BAUD #define에 의해 정의됩니다. 
+일반적으로 보드 UART 기능에 따라 3M 또는 115200 중 하나입니다.
+
+depending on board UART capabilities. depending on board UART capabilities
+
+
+  
+
+시연된 기능
+- SPP 라이브러리 사용
+ 
+참고: 이 스니펫 앱은 WICEED HCI 제어를 지원하지 않으며 추적에만 전송을 사용할 수 있습니다.
+
+WICE HCIUART에 추적 경로를 지정하면 
+아래 wiceed_transport_cfg_t 구조에 설정된 것과 동일한 보드 속도로 ClientControl 앱을 사용합니다. 
+
+(현재 HCI_UART_DEFAULT_BAUD로 설정되어 있으며, 사용되는 보드의 기능에 따라 3Mbps 또는 115200입니다.)
+
+
+
+피어 장치에 대한 직렬 포트 연결을 설정하거나 RFCOMM이 피어 장치의 연결을 수락하도록 허용합니다.
+
+
+서버가 여러 개의 동시 연결을 허용할 준비가 된 경우 서버는 동일한 scn 매개 변수를 사용하여 이 함수를 여러 번 호출할 수 있습니다.
+
+클라이언트가 기존의 none 이니시에이터 멀티플렉서 채널에서 연결을 시작하는 경우 연결의 DLCI는 (scn * 2 + 1)입니다.  
+
+그렇지 않으면 (scn * 2)입니다. 
+서버의 경우 클라이언트가 (scn * 2 + 1) dlci를 사용하여 호출할 경우 나중에 DLCI를 변경할 수 있습니다.
+
+
+
