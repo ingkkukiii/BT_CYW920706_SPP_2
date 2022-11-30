@@ -14,28 +14,40 @@
 * 인터벌 윈도우, 바이패스, cmd(명령어)
 
 
-* WORK - 1130(수) 오후 점검
-1.cyw920706
-ㄴrfcomm1108 code merge(1.puart, 2.rfcomm spp, 3.gpio)
-ㄴSW 버튼 enable						(o)
-ㄴSW Control한번 누르면 인터벌 깜빡임 주기 	(o)
-ㄴ점등SW								()
-ㄴSwitch Button(1>2>3) 점멸 Blinking 주기 변화  (x)
-ㄴ전원on/off해도 status 기억 nvram			(x)
-ㄴ누르면 스탑 및 status 초기화
+* CYW920706 WORK - 1130(수) 오후 점검
+1.엑셀 함수정리									()
 
-2.엑셀 함수정리
+2.code merge 
+ㄴ(1.puart, 2.rfcomm spp, 3.gpio)					(o)
+ㄴSPP 라이브러리 분리
+ㄴwiced_platform.h 삭제 -> 헤더파일 생성				(o)
+ㄴ코드정리
 
-3.SPP 라이브러리 분리
-ㄴ메이크파일
+3.GPIO CTRL
+ㄴLED Set										(o)
+ㄴSW1, SW2 Set						 			(o)
 
-4.WICED플래폼 삭제 헤더파일 날리기,
-ㄴSPP.h 만들고 관련 내용 정리
-ㄴ필요없는 코드 지우고 시작
-
-5.puart, 에어 구현, 
+4.INTERRUPT CTRL
+ㄴSW1 -> LED Toggle Blinking(점멸), 주기(250ms, 1000ms)	(o)
+ㄴSW2 -> LED ON/OFF	 							(o)
+ㄴInterrupt Handler -> Switch문 사용					(o)
 
 
+
+4-1. SW 바운싱 문제 해결							
+ㄴ타임시간으로 디바운싱 구현 - 코드 실행 멈추지 않고		()			
+
+5.Status 기억
+ㄴNVRAM 사용 ON(1)->OFF->ON 할 때, ON(1) 상태 기억		()
+
+6.app_send_data() FUNC 이해
+ㄴ인터럽트, 타임아웃 정확하게 무엇이 다른것인지
+
+7.메이크 파일 수정
+
+메이크파일
+PUART_RTS_CTS_FLOW
+888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
 */
 ////////////////////////////////////////////////////////////////////////////////////////////////
  

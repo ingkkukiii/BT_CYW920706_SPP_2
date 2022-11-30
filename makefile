@@ -109,7 +109,7 @@ SEND_DATA?=INTERRUPT
 # LOOPBACK_DATA if enabled, the app sends back received data.
 LOOPBACK_DATA?=0
 
-# FREQ?=24Mhz
+FREQ?=24Mhz
 
 # wait for SWD attach
 ifeq ($(ENABLE_DEBUG),1)
