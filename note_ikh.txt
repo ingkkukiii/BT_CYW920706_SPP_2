@@ -40,13 +40,95 @@
 5.Status 기억
 ㄴNVRAM 사용 ON(1)->OFF->ON 할 때, ON(1) 상태 기억		()
 
+app_write_nvram(SPP_NVRAM_ID, sizeof(wiced_bt_device_link_keys_t), &p_event_data->paired_device_link_keys_update);
+app_management_callback 18 UPDATE
+NVRAM ID:1 written :138 bytes result:0
+
+app_read_nvram(SPP_NVRAM_ID, &p_event_data->paired_device_link_keys_request, sizeof(wiced_bt_device_link_keys_t))
+app_management_callback 19 REQUEST
+NVRAM ID:1 read out of 138 bytes:138 result:0
+
+링크키를 NVRAM에 저장
+LED 상태를 NVRAM에 저장
+
 6.app_send_data() FUNC 이해
-ㄴ인터럽트, 타임아웃 정확하게 무엇이 다른것인지
+ㄴ인터럽트, 타임아웃 정확하게 무엇이 다른것인지			
 
-7.메이크 파일 수정
+7.메이크 파일 수정								(o)
 
-메이크파일
-PUART_RTS_CTS_FLOW
+*221201 NVRAM 정리내용
+NVRAM에 대해서
+* Write NVRAM 함수는 NVRAM에 정보를 저장하기 위해서 불려짐
+int app_write_nvram(int nvram_id, int data_len, void *p_data)
+** wiced_hal_write_nvram(nvram_id, data_len, (uint8_t*)p_data, &result);
+
+*NVRAM에 데이터 쓰기, 애플리케이션은 하나의 VS ID 섹션에 최대 255바이트 쓰기 가능
+Writes the data to NVRAM, Application can write up to 255 bytes in one VS  id section
+
+*VS ids는 휘발성 섹션 식별자임.
+Volatile Section Identifier. 
+
+* APP는 VS IDS를 사용할 수 있음 VSID_START(0x01) 부터 VSID_END(0x75)까지
+Application can use the VS ids from WICED_NVRAM_VSID_START to WICED_NVRAM_VSID_END
+
+
+app_management_callback 18
+(NVRAM ID:1 written :138 bytes result:0
+app_management_callback 12
+
+app_management_callback 19
+/NVRAM ID:1 read out of 138 bytes:138 result:0
+app_management_callback 12
+
+4*************Starting PUART Application**********
+.APP Start, interupt=0, timeout=0, loopback=0
+app_management_callback 21
+app_management_callback 20
+app_management_callback 20
+pp_management_callback 0
+8The initial value of gpio_test_led FUNC is set to LOW!
+Pin config of P38 is 521
+Pin config of P34 is 521
+hci_control_write_eir 22a3f8
+EIR :
+09 09 73 70
+70 20 74 65
+73 74 03 03 01 11 00
+app_management_callback 19
+-NVRAM ID:1 read out of 138 bytes:0 result:4
+Key retrieval failure
+pp_management_callback 9
+pp_management_callback 8
+@BTM_PAIRING_IO_CAPABILITIES_REQUEST_EVT bda a8 2b b9 e6 7a 1d
+pp_management_callback 4
+JPairing with: BdAddr:a8 2b b9 e6 7a 1d  Status:0 Len:248 Name:Galaxy S10
+app_management_callback 11
+Pairing Complete: 0
+app_management_callback 18
+(NVRAM ID:1 written :138 bytes result:0
+app_management_callback 12
+8Encryption Status Event: bd (a8 2b b9 e6 7a 1d ) res 0
+@spp_connection_up_callback handle:2 address:a8 2b b9 e6 7a 1d
+4*************Starting PUART Application**********
+.APP Start, interupt=0, timeout=0, loopback=0
+app_management_callback 21
+app_management_callback 20
+app_management_callback 20
+pp_management_callback 0
+8The initial value of gpio_test_led FUNC is set to LOW!
+Pin config of P38 is 521
+Pin config of P34 is 521
+hci_control_write_eir 22a3f8
+EIR :
+09 09 73 70
+70 20 74 65
+73 74 03 03 01 11 00
+app_management_callback 19
+/NVRAM ID:1 read out of 138 bytes:138 result:0
+app_management_callback 12
+8Encryption Status Event: bd (a8 2b b9 e6 7a 1d ) res 0
+@spp_connection_up_callback handle:2 address:a8 2b b9 e6 7a 1d
+
 888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
 */
 ////////////////////////////////////////////////////////////////////////////////////////////////
