@@ -91,33 +91,24 @@
 #include "wiced_hci.h"
 #include "wiced_timer.h"
 #include "wiced_transport.h"
-//#include "wiced_platform.h"
+
 #include "wiced_memory.h"
 #include "string.h"
 #include "wiced_bt_stack.h"
 #include "wiced_bt_rfcomm.h"
 #include "cycfg_sdp_db.h"
-#if defined(CYW20706A2) || defined(CYW43012C0)
-//#include "wiced_bt_app_hal_common.h"
-#endif
+
 
 #include "wiced_hal_puart.h"
 #include "wiced_hal_gpio.h"
 
-#define HCI_TRACE_OVER_TRANSPORT            1   // If defined HCI traces are send over transport/WICED HCI interface
-// configure either SEND_DATA_ON_INTERRUPT or SEND_DATA_ON_TIMEOUT, but not both
-// CYW9M2BASE-43012BT does not support SEND_DATA_ON_INTERRUPT because the platform does not have button connected to Bluetooth board.
-#if defined (NO_BUTTON_SUPPORT)
-#if defined(SEND_DATA_ON_INTERRUPT) && (SEND_DATA_ON_INTERRUPT==1)
-#undef SEND_DATA_ON_INTERRUPT                   // disable SEND_DATA_ON_INTERRUPT is no app button
-#define SEND_DATA_ON_TIMEOUT                1
-#endif
-#endif
-
+#define HCI_TRACE_OVER_TRANSPORT            1
 //#define LOOPBACK_DATA                     1   // If defined application loops back received data
 
 #define WICED_EIR_BUF_MAX_SIZE              264
 #define SPP_NVRAM_ID                        WICED_NVRAM_VSID_START
+#define WICED_NVRAM_VSID_START_2            0x02
+#define LED_STATUS_NVRAM_ID                 WICED_NVRAM_VSID_START_2
 
 /* Max TX packet to be sent over SPP */
 #define MAX_TX_BUFFER                       1017
@@ -126,22 +117,8 @@
 #define SPP_MAX_PAYLOAD                     1007
 
 #if SEND_DATA_ON_INTERRUPT
-#include "wiced_hal_gpio.h"
-//#include "wiced_platform.h"
-
 #define APP_TOTAL_DATA_TO_SEND             1000000
 #define BUTTON_GPIO                         WICED_P30
-
-#if defined(CYW43012C0)
-#define WICED_PLATFORM_BUTTON_1          WICED_P00
-#ifndef WICED_GPIO_BUTTON
-#define WICED_GPIO_BUTTON                WICED_PLATFORM_BUTTON_1
-#endif
-#ifndef WICED_GPIO_BUTTON_DEFAULT_STATE
-#define WICED_GPIO_BUTTON_DEFAULT_STATE  GPIO_PIN_OUTPUT_HIGH
-#endif
-#endif
-
 int     app_send_offset = 0;
 uint8_t app_send_buffer[SPP_MAX_PAYLOAD];
 uint32_t time_start = 0;
@@ -224,34 +201,37 @@ const wiced_transport_cfg_t transport_cfg =
 /******************************************************************************
  *                                Variables Definitions
  ******************************************************************************/
-#define LED_GPIO_1                              WICED_P12 //Set LED Pin -> I2S_DI/PCM_IN(P12) ikh@221128 
+ //Set LED Pin -> I2S_DI/PCM_IN(P12) ikh@221128
 
 /* Delay timer for LED blinking */
-#define APP_TIMEOUT_IN_MILLI_SECONDS_A                  1000       /* Milli Seconds timer */
-#define APP_TIMEOUT_IN_MILLI_SECONDS_B                  250       /* Milli Seconds timer */
-#define APP_TIMEOUT_IN_MILLI_SECONDS_C                  1000      /* Milli Seconds timer */
-#define APP_TIMEOUT_IN_MILLI_SECONDS_D                  400      /* Milli Seconds timer */
+#define APP_TIMEOUT_IN_MILLI_SECONDS_50                 50       /* Milli Seconds timer */
+#define APP_TIMEOUT_IN_MILLI_SECONDS_250                250       /* Milli Seconds timer */
+#define APP_TIMEOUT_IN_MILLI_SECONDS_500                500      /* Milli Seconds timer */
+#define APP_TIMEOUT_IN_MILLI_SECONDS_1000               1000      /* Milli Seconds timer */
+
+static BYTE prev_blink_status = GPIO_PIN_OUTPUT_LOW; //타입변경 타입통일
+static BYTE curr_blink_status = GPIO_PIN_OUTPUT_HIGH;
+static uint32_t prev_blink_interval = APP_TIMEOUT_IN_MILLI_SECONDS_250;
+static uint32_t curr_blink_interval = 0;
 
 wiced_timer_t seconds_timer;                   /* app seconds timer */
 uint32_t wiced_timer_count       = 0;          /* number of seconds elapsed */
 
-typedef enum wiced_LED_management_evt_e {
-        LED_ONOFF_EVT = 34,
-        LED_TOGGLE_EVT = 38,
-};
 
-typedef uint8_t wiced_LED_management_evt_t;  
 /*******************************************************************
  * Function Prototypes
  ******************************************************************/
 //gpio
-void seconds_app_timer_cb( uint32_t arg );
-static void gpio_test_led( );
-//puart
-static wiced_result_t puart_app_management_cback(wiced_bt_management_evt_t event,
-                                  wiced_bt_management_evt_data_t *p_event_data);
+static void seconds_app_timer_cb( uint32_t arg );
 
-static void test_puart_driver(void);
+//interrupt
+static void gpio_interrrupt_handler(void *data, uint8_t port_pin);
+
+//puart
+void wiced_hal_puart_reset_puart_interrupt(void);
+void wiced_hal_puart_register_interrupt(void (*puart_rx_cbk)(void*));
+void puart_rx_interrupt_callback(void* unused);
+
 //spp
 static wiced_bt_dev_status_t app_management_callback (wiced_bt_management_evt_t event, wiced_bt_management_evt_data_t *p_event_data);
 static void                  app_write_eir(void);
@@ -260,7 +240,7 @@ static int                   app_read_nvram(int nvram_id, void *p_data, int data
 
 #if SEND_DATA_ON_INTERRUPT
 static void                  app_tx_ack_timeout(TIMER_PARAM_TYPE param);
-//static void                  app_interrupt_handler(void *data, uint8_t port_pin);
+static void                  app_interrupt_handler(void *data, uint8_t port_pin);
 #endif
 #ifdef HCI_TRACE_OVER_TRANSPORT
 static void                  app_trace_callback(wiced_bt_hci_trace_type_t type, uint16_t length, uint8_t* p_data);
@@ -290,34 +270,7 @@ uint64_t clock_SystemTimeMicroseconds64(void)
 
 void buffer_report(char *msg)
 {
-#if BTSTACK_VER >= 0x03000001
-    /*
-     * Get statistics of default heap.
-     * TODO: get statistics of stack heap (btu_cb.p_heap)
-     */
-    wiced_bt_heap_statistics_t heap_stat;
-
-    if (wiced_bt_get_heap_statistics(p_default_heap, &heap_stat))
-    {
-        WICED_BT_TRACE("--- heap_size:%d ---\n", heap_stat.heap_size);
-        WICED_BT_TRACE("max_single_allocation:%d max_heap_size_used:%d\n",
-                        heap_stat.max_single_allocation,
-                        heap_stat.max_heap_size_used);
-        WICED_BT_TRACE("allocation_failure_count:%d current_largest_free_size:%d\n",
-                        heap_stat.allocation_failure_count,
-                        heap_stat.current_largest_free_size);
-        WICED_BT_TRACE("current_num_allocations:%d current_size_allocated:%d\n",
-                        heap_stat.current_num_allocations,
-                        heap_stat.current_size_allocated);
-        WICED_BT_TRACE("current_num_free_fragments:%d current_free_size\n",
-                        heap_stat.current_num_free_fragments,
-                        heap_stat.current_free_size);
-    }
-    else
-    {
-        WICED_BT_TRACE("buffer_report: wiced_bt_get_heap_statistics failed\n");
-    }
-#else /* !BTSTACK_VER */
+     /* !BTSTACK_VER < 0x03000001 */
 
     wiced_bt_buffer_statistics_t buffer_stats[5];
     wiced_result_t result;
@@ -341,7 +294,6 @@ void buffer_report(char *msg)
     }
     else
         WICED_BT_TRACE("buffer_report: wiced_bt_get_buffer_usage failed, returned %d\n", result);
-#endif
 }
 
 /*
@@ -369,10 +321,10 @@ APPLICATION_START()
 #ifdef NO_PUART_SUPPORT
     // wiced_set_debug_uart( WICED_ROUTE_DEBUG_TO_WICED_UART );
 #else
+
     wiced_set_debug_uart( WICED_ROUTE_DEBUG_TO_PUART );
-#if defined (CYW20706A2)
     wiced_hal_puart_select_uart_pads( WICED_PUART_RXD, WICED_PUART_TXD, 0, 0);
-#endif
+
 #endif
 
     // Set to HCI to see traces on HCI uart - default if no call to wiced_set_debug_uart()
@@ -382,7 +334,9 @@ APPLICATION_START()
     // HCI debug interface to be parsed by ClientControl/BtSpy.
     wiced_set_debug_uart(WICED_ROUTE_DEBUG_TO_WICED_UART);
 #endif
+
     WICED_BT_TRACE("*************Starting PUART Application**********\n\r");
+
 #if SEND_DATA_ON_INTERRUPT
     interupt = 1;
 #endif
@@ -392,24 +346,13 @@ APPLICATION_START()
 #if LOOPBACK_DATA
     loopback = 1;
 #endif
+
     WICED_BT_TRACE("APP Start, interupt=%d, timeout=%d, loopback=%d\n", interupt, timeout, loopback);
 
-#if BTSTACK_VER >= 0x03000001
-    /* Create default heap */
-    p_default_heap = wiced_bt_create_heap("default_heap", NULL, BT_STACK_HEAP_SIZE, NULL, WICED_TRUE);
-    if (p_default_heap == NULL)
-    {
-        WICED_BT_TRACE("create default heap error: size %d\n", BT_STACK_HEAP_SIZE);
-        return;
-    }
-    /* Initialize Stack and Register Management Callback */
-    // Register call back and configuration with stack
-    wiced_bt_stack_init(app_management_callback, &wiced_bt_cfg_settings);
-#else
     /* Initialize Stack and Register Management Callback */
     // Register call back and configuration with stack
     wiced_bt_stack_init(app_management_callback, &wiced_bt_cfg_settings, wiced_bt_cfg_buf_pools);
-#endif
+
 }
 
 /*
@@ -419,23 +362,57 @@ void application_init(void)
 {
     wiced_result_t         result;
 
-#if defined (CYW20706A2)
+    uint16_t pin_config, pin_config2;
+
     /* Initialize wiced app */
     wiced_bt_app_init();
 
     /* Initialize the RTC block */
     rtc_init();
-#endif
 
-// #if SEND_DATA_ON_INTERRUPT
+    /* Initializes the GPIO driver */
+    wiced_bt_app_hal_init();
 
-// /* Initializes the GPIO driver */
-//     wiced_bt_app_hal_init();
-// 	wiced_hal_gpio_configure_pin(WICED_GPIO_BUTTON, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
-// 	wiced_hal_gpio_register_pin_for_interrupt(WICED_GPIO_BUTTON, app_interrupt_handler, NULL);
-//     // init timer that we will use for the rx data flow control.
-//     wiced_init_timer(&app_tx_timer, app_tx_ack_timeout, 0, WICED_MILLI_SECONDS_TIMER);
-// #endif // SEND_DATA_ON_INTERRUPT
+    /* initial the led blink timer */
+    wiced_init_timer( &seconds_timer, &seconds_app_timer_cb, 0, WICED_MILLI_SECONDS_PERIODIC_TIMER );
+            
+
+    /**
+     * This function turns off flow control, and enables Tx
+     * and Rx. Echoes the input byte with increment by 1.
+     */
+    /* BEGIN - puart interrupt */
+    wiced_hal_puart_reset_puart_interrupt();
+    wiced_hal_puart_register_interrupt(puart_rx_interrupt_callback);
+
+    /* Turn on Tx */
+    wiced_hal_puart_enable_tx();
+    wiced_hal_puart_print( "Type something! Keystrokes are echoed to the terminal ...\r\n");
+
+
+    /* Configure LED PIN as input and initial outvalue as high
+     * Configure GPIO PIN# as input, pull up and interrupt on rising edge and output value as high
+     *  (pin should be configured before registering interrupt handler )
+     */
+
+    wiced_hal_gpio_configure_pin( WICED_GPIO_LED, GPIO_OUTPUT_ENABLE, GPIO_PIN_OUTPUT_HIGH );
+    wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, GPIO_PIN_OUTPUT_LOW);
+
+    wiced_hal_gpio_configure_pin( WICED_GPIO_BUTTON_TOGGLE, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
+    wiced_hal_gpio_configure_pin( WICED_GPIO_BUTTON_ONOFF, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
+
+
+
+    wiced_hal_gpio_register_pin_for_interrupt( WICED_GPIO_BUTTON_TOGGLE, gpio_interrrupt_handler, NULL );
+    wiced_hal_gpio_register_pin_for_interrupt( WICED_GPIO_BUTTON_ONOFF, gpio_interrrupt_handler, NULL );
+
+    WICED_BT_TRACE( "The initial value of gpio_test_led FUNC is set to LOW!\n" );
+
+    /* Get the pin configuration set above */
+    pin_config = wiced_hal_gpio_get_pin_config( WICED_GPIO_BUTTON_TOGGLE );
+    WICED_BT_TRACE( "Pin config of P%d is %d\n", WICED_GPIO_BUTTON_TOGGLE, pin_config );
+    pin_config2 = wiced_hal_gpio_get_pin_config( WICED_GPIO_BUTTON_ONOFF );
+    WICED_BT_TRACE( "Pin config of P%d is %d\n", WICED_GPIO_BUTTON_ONOFF, pin_config2 );
 
     app_write_eir();
 
@@ -448,12 +425,6 @@ void application_init(void)
     // Initialize SPP library
     wiced_bt_spp_startup(&spp_reg);
 
-#ifdef HCI_TRACE_OVER_TRANSPORT
-    // There is a virtual HCI interface between upper layers of the stack and
-    // the controller portion of the chip with lower layers of the Bluetooth stack.
-    // Register with the stack to receive all HCI commands, events and data.
-    wiced_bt_dev_register_hci_trace(app_trace_callback);
-#endif
     /* create SDP records */
     wiced_bt_sdp_db_init((uint8_t *)sdp_database, sdp_database_len);
 
@@ -468,6 +439,21 @@ void application_init(void)
     wiced_bt_dev_set_connectability(BTM_CONNECTABLE,
         wiced_bt_cfg_settings.br_edr_scan_cfg.page_scan_interval,
         wiced_bt_cfg_settings.br_edr_scan_cfg.page_scan_window);
+
+
+#ifdef HCI_TRACE_OVER_TRANSPORT
+    // There is a virtual HCI interface between upper layers of the stack and
+    // the controller portion of the chip with lower layers of the Bluetooth stack.
+    // Register with the stack to receive all HCI commands, events and data.
+    wiced_bt_dev_register_hci_trace(app_trace_callback);
+#endif
+
+#if SEND_DATA_ON_INTERRUPT
+	wiced_hal_gpio_configure_pin(WICED_GPIO_BUTTON, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
+	wiced_hal_gpio_register_pin_for_interrupt(WICED_GPIO_BUTTON, app_interrupt_handler, NULL);
+    // init timer that we will use for the rx data flow control.
+    wiced_init_timer(&app_tx_timer, app_tx_ack_timeout, 0, WICED_MILLI_SECONDS_TIMER);
+#endif
 
 #if SEND_DATA_ON_TIMEOUT
     /* Starting the app timers, seconds timer and the ms timer  */
@@ -495,12 +481,25 @@ wiced_result_t app_management_callback(wiced_bt_management_evt_t event, wiced_bt
     /* Bluetooth  stack enabled */
     case BTM_ENABLED_EVT:
         application_init();
-        wiced_bt_app_hal_init();
-        //WICED_BT_TRACE("Free mem:%d", cfa_mm_MemFreeBytes());
-        //타임init()
-        test_puart_driver();
-        gpio_test_led( );
-        gpio_set_input_interrupt();
+
+        if(app_read_led_onoff_nvram(LED_STATUS_NVRAM_ID, &curr_blink_status, sizeof(curr_blink_status)) != 0)
+        {
+            wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, curr_blink_status);
+        }
+        else
+        {
+            WICED_BT_TRACE("LED Key retrieval failure\n");
+        }
+        if(app_read_led_toggle_nvram(LED_STATUS_NVRAM_ID, &curr_blink_interval, sizeof(curr_blink_interval)) != 0)
+        {
+
+            wiced_start_timer( &seconds_timer, curr_blink_interval );
+        }
+        else
+        {
+            WICED_BT_TRACE("LED Key retrieval failure\n");
+        }
+
         break;
 
     case BTM_DISABLED_EVT:
@@ -566,11 +565,6 @@ wiced_result_t app_management_callback(wiced_bt_management_evt_t event, wiced_bt
     }
     return result;
 }
-
-
-/**
- * ikh@221130 - puart func
- */
 
 /*
  *  Prepare extended inquiry response data.  Current version publishes device name and 16bit
@@ -686,6 +680,7 @@ wiced_bool_t spp_rx_data_callback(uint16_t handle, uint8_t* p_data, uint32_t dat
     WICED_BT_TRACE("%s handle:%d len:%d %02x-%02x, total rx %d\n", __FUNCTION__, handle, data_len, p_data[0], p_data[data_len - 1], spp_rx_bytes);
 
     wiced_hal_puart_synchronous_write(p_data, data_len); //ikh@221129 => spp > com(puart)
+
 #if LOOPBACK_DATA
     return wiced_bt_spp_send_session_data(handle, p_data, data_len);
 #else
@@ -703,10 +698,20 @@ static void spp_bt_remote_name_callback(wiced_bt_dev_remote_name_result_t *p_rem
             p_remote_name_result->length, p_remote_name_result->remote_bd_name);
 }
 
+ 
+
 /*
  * Write NVRAM function is called to store information in the NVRAM.
  */
 int app_write_nvram(int nvram_id, int data_len, void *p_data)
+{
+    wiced_result_t  result;
+    int             bytes_written = wiced_hal_write_nvram(nvram_id, data_len, (uint8_t*)p_data, &result);
+
+    WICED_BT_TRACE("NVRAM ID:%d written :%d bytes result:%d\n", nvram_id, bytes_written, result);
+    return (bytes_written);
+}
+int app_write_led_nvram(int nvram_id, int data_len, void *p_data)
 {
     wiced_result_t  result;
     int             bytes_written = wiced_hal_write_nvram(nvram_id, data_len, (uint8_t*)p_data, &result);
@@ -730,8 +735,31 @@ int app_read_nvram(int nvram_id, void *p_data, int data_len)
     }
     return (read_bytes);
 }
+int app_read_led_toggle_nvram(int nvram_id, void *p_data, int data_len)
+{
+    uint16_t        read_bytes = 0;
+    wiced_result_t  result;
 
-#if 1 //SEND_DATA_ON_INTERRUPT
+    if (data_len >= sizeof(curr_blink_interval))
+    {
+        read_bytes = wiced_hal_read_nvram(nvram_id, sizeof(curr_blink_interval), p_data, &result);
+        WICED_BT_TRACE("NVRAM ID:%d read out of %d bytes:%d result:%d\n", nvram_id, sizeof(curr_blink_status), read_bytes, result);
+    }
+    return (read_bytes);
+}
+int app_read_led_onoff_nvram(int nvram_id, void *p_data, int data_len)
+{
+    uint16_t        read_bytes = 0;
+    wiced_result_t  result;
+
+    if (data_len >= sizeof(curr_blink_interval))
+    {
+        read_bytes = wiced_hal_read_nvram(nvram_id, sizeof(curr_blink_interval), p_data, &result);
+        WICED_BT_TRACE("NVRAM ID:%d read out of %d bytes:%d result:%d\n", nvram_id, sizeof(curr_blink_interval), read_bytes, result);
+    }
+    return (read_bytes);
+}
+#if SEND_DATA_ON_INTERRUPT
 /*
  * Test function which sends as much data as possible.
  */
@@ -817,7 +845,6 @@ void app_tx_ack_timeout(TIMER_PARAM_TYPE param)
 }
 #endif
 
-
 #ifdef HCI_TRACE_OVER_TRANSPORT
 /*
  *  Pass protocol traces up over the transport
@@ -833,16 +860,9 @@ void app_trace_callback(wiced_bt_hci_trace_type_t type, uint16_t length, uint8_t
 }
 #endif
 
-
 /**
- Function Name:
- puart_rx_interrupt_callback
-
- Function Description:
  @brief  Interrupt routine called when PUART has data to be read
-
  @param  unused    Not used
-
  @return        void
  */
 void puart_rx_interrupt_callback(void* unused)
@@ -871,101 +891,68 @@ void puart_allow_interrupt()
 #endif
 
 /**
- Function Name:
- test_puart_driver
-
- Function Description:
- @brief  This function turns off flow control, and enables Tx
-         and Rx. Echoes the input byte with increment by 1.
-
- @param  void
-
- @return  void
+ * ikh@221130 - gpio func
  */
-void test_puart_driver( void )
+void gpio_interrrupt_handler(void *data, uint8_t port_pin) //ikh@221128
 {
-
-    /* BEGIN - puart interrupt */
-    wiced_hal_puart_reset_puart_interrupt();
-    wiced_hal_puart_register_interrupt(puart_rx_interrupt_callback);
-#ifndef CYW20706A2
-    wiced_hal_puart_set_watermark_level(1);
-#endif
-
-    /* Turn on Tx */
-    wiced_hal_puart_enable_tx();
-    wiced_hal_puart_print( "Type something! "
-            "Keystrokes are echoed to the terminal ...\r\n");
-}
-
-
-/**
- * ikh@221130 - gpio func 
- */
-void gpio_interrrupt_handler(void *data, wiced_LED_management_evt_t port_pin) //ikh@221128
-{
-    static uint32_t prev_blink_interval = APP_TIMEOUT_IN_MILLI_SECONDS_A;
-    uint32_t curr_blink_interval = 0;
-
-    static BYTE prev_blink_status = GPIO_PIN_OUTPUT_LOW; //타입변경 타입통일
-    BYTE curr_blink_status = GPIO_PIN_OUTPUT_HIGH;
-
 
     WICED_BT_TRACE("app_management_callback %d\n", port_pin);
 
     switch (port_pin)
     {
-        case LED_TOGGLE_EVT/* constant-expression */:
+        case WICED_GPIO_BUTTON_TOGGLE/* constant-expression */:
             /* Get the status of interrupt on P# */
-            if ( wiced_hal_gpio_get_pin_interrupt_status( WICED_GPIO_BUTTON ) )
+            if ( wiced_hal_gpio_get_pin_interrupt_status( WICED_GPIO_BUTTON_TOGGLE ) )
             {
-        
+
                 /* Clear the gpio interrupt */
-                wiced_hal_gpio_clear_pin_interrupt_status( WICED_GPIO_BUTTON );
+                wiced_hal_gpio_clear_pin_interrupt_status( WICED_GPIO_BUTTON_TOGGLE );
 
             }
-            
             /* stop the led blink timer */
             wiced_stop_timer( &seconds_timer );
 
-            /* initial the led blink timer */
-            wiced_init_timer( &seconds_timer, &seconds_app_timer_cb, 0, WICED_MILLI_SECONDS_PERIODIC_TIMER );
             
             /* toggle the blink time interval */
-            curr_blink_interval = (APP_TIMEOUT_IN_MILLI_SECONDS_A == prev_blink_interval)?APP_TIMEOUT_IN_MILLI_SECONDS_B:APP_TIMEOUT_IN_MILLI_SECONDS_A;
+            curr_blink_interval = (APP_TIMEOUT_IN_MILLI_SECONDS_250 == prev_blink_interval)?APP_TIMEOUT_IN_MILLI_SECONDS_1000:APP_TIMEOUT_IN_MILLI_SECONDS_250;
 
-            //wiced_start_timer( &seconds_timer, APP_TIMEOUT_IN_MILLI_SECONDS_A );
+            //wiced_start_timer( &seconds_timer, APP_TIMEOUT_IN_MILLI_SECONDS_50 );
             wiced_start_timer( &seconds_timer, curr_blink_interval );
-
+            
+            app_write_led_nvram(LED_STATUS_NVRAM_ID, sizeof(curr_blink_interval), &curr_blink_interval);
+            
             WICED_BT_TRACE("gpio_interrupt_handler : %d\n\r", curr_blink_interval);
 
+            //app_write_led_nvram(LED_TOGGLE_NVRAM_ID, sizeof(curr_blink_interval), &curr_blink_interval);
             /* update the previous blink interval */
             prev_blink_interval = curr_blink_interval;
             
+
             break;
-        
-        case LED_ONOFF_EVT:
+
+        case WICED_GPIO_BUTTON_ONOFF:
 
              /* Get the status of interrupt on P# */
-            if ( wiced_hal_gpio_get_pin_interrupt_status( WICED_GPIO_BUTTON_2) )
+            if ( wiced_hal_gpio_get_pin_interrupt_status( WICED_GPIO_BUTTON_ONOFF) )
             {
-            
+
                 /* Clear the gpio interrupt */
-                wiced_hal_gpio_clear_pin_interrupt_status( WICED_GPIO_BUTTON_2 );
+                wiced_hal_gpio_clear_pin_interrupt_status( WICED_GPIO_BUTTON_ONOFF );
 
             }
             /* stop the led blink timer */
             wiced_stop_timer( &seconds_timer );
-            
+
             /* toggle the blink time interval */
             curr_blink_status = (GPIO_PIN_OUTPUT_LOW == prev_blink_status)?GPIO_PIN_OUTPUT_HIGH:GPIO_PIN_OUTPUT_LOW;
 
-            wiced_hal_gpio_set_pin_output( LED_GPIO_1, curr_blink_status);
-
+            wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, curr_blink_status);
+            app_write_led_nvram(LED_STATUS_NVRAM_ID, sizeof(curr_blink_status), &curr_blink_status);
+ 
             WICED_BT_TRACE("gpio_interrupt_handler : %d\n\r", curr_blink_status);
 
-
             prev_blink_status = curr_blink_status;
+
 
             break;
 
@@ -973,25 +960,6 @@ void gpio_interrrupt_handler(void *data, wiced_LED_management_evt_t port_pin) //
             break;
     }
 
-}
-
-void gpio_set_input_interrupt( )
-{
-    uint16_t pin_config, pin_config2;
-
-    /* Configure GPIO PIN# as input, pull up and interrupt on rising edge and output value as high
-     *  (pin should be configured before registering interrupt handler )*/
-    wiced_hal_gpio_configure_pin( WICED_GPIO_BUTTON, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
-    wiced_hal_gpio_register_pin_for_interrupt( WICED_GPIO_BUTTON, gpio_interrrupt_handler, NULL );
-    
-    wiced_hal_gpio_configure_pin( WICED_GPIO_BUTTON_2, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
-    wiced_hal_gpio_register_pin_for_interrupt( WICED_GPIO_BUTTON_2, gpio_interrrupt_handler, NULL );
-
-    /* Get the pin configuration set above */
-    pin_config = wiced_hal_gpio_get_pin_config( WICED_GPIO_BUTTON );
-    WICED_BT_TRACE( "Pin config of P%d is %d\n", WICED_GPIO_BUTTON, pin_config );
-    pin_config2 = wiced_hal_gpio_get_pin_config( WICED_GPIO_BUTTON_2 );
-    WICED_BT_TRACE( "Pin config of P%d is %d\n", WICED_GPIO_BUTTON_2, pin_config2 );
 }
 
 /* The function invoked on timeout of app seconds timer. */
@@ -1002,20 +970,10 @@ void seconds_app_timer_cb( uint32_t arg )
 
     if(wiced_timer_count & 1)
     {
-        wiced_hal_gpio_set_pin_output( LED_GPIO_1, GPIO_PIN_OUTPUT_LOW);
+        wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, GPIO_PIN_OUTPUT_LOW);
     }
     else
     {
-        wiced_hal_gpio_set_pin_output( LED_GPIO_1, GPIO_PIN_OUTPUT_HIGH);
+        wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, GPIO_PIN_OUTPUT_HIGH);
     }
-}
-
-void gpio_test_led( )
-{
-    WICED_BT_TRACE( "The initial value of gpio_test_led FUNC is set to LOW!\n" ); 
-
-    /* Configure LED PIN as input and initial outvalue as high */
-    wiced_hal_gpio_configure_pin( LED_GPIO_1, GPIO_OUTPUT_ENABLE, GPIO_PIN_OUTPUT_HIGH );
-    wiced_hal_gpio_set_pin_output( LED_GPIO_1, GPIO_PIN_OUTPUT_LOW); //ikh@221130
-
 }

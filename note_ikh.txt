@@ -38,7 +38,7 @@
 ㄴ타임시간으로 디바운싱 구현 - 코드 실행 멈추지 않고		()			
 
 5.Status 기억
-ㄴNVRAM 사용 ON(1)->OFF->ON 할 때, ON(1) 상태 기억		()
+ㄴNVRAM 사용 ON(1)->OFF->ON 할 때, ON(1) 상태 기억		(o)
 
 app_write_nvram(SPP_NVRAM_ID, sizeof(wiced_bt_device_link_keys_t), &p_event_data->paired_device_link_keys_update);
 app_management_callback 18 UPDATE

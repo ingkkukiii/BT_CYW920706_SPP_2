@@ -39,27 +39,28 @@ typedef enum
 
 #define HCI_UART_DEFAULT_BAUD   115200   /* default baud rate is 3M, that is max supported baud rate on Mac OS */
 
-#ifdef LEGACY_BOARD
-//P49_20706
-#define WICED_GPIO_BUTTON                                   WICED_P36      /* pin for button interrupts */
-#define WICED_GPIO_PIN_BUTTON                               WICED_GPIO_BUTTON
-#define WICED_GPIO_BUTTON_2                                 WICED_P34             //Set Button_2 Pin -> I2S_PCM_OUT(P29) ikh@221128
-#define WICED_GPIO_PIN_BUTTON_2                             WICED_GPIO_BUTTON_2
+#ifdef LEGACY_BOARD //CYW920706WCDEVAL
+#define WICED_GPIO_LED                                             WICED_P31
+
+#define WICED_GPIO_BUTTON_TOGGLE                                   WICED_P30    
+#define WICED_GPIO_PIN_BUTTON_TOGGLE                               WICED_GPIO_BUTTON
+#define WICED_GPIO_BUTTON_ONOFF                                    WICED_P34    
+#define WICED_GPIO_PIN_BUTTON_2                                    WICED_GPIO_BUTTON_ONOFF
 
 /* x can be GPIO_EN_INT_RISING_EDGE or GPIO_EN_INT_FALLING_EDGE or GPIO_EN_INT_BOTH_EDGE */
-#define WICED_GPIO_BUTTON_SETTINGS(x)                       ( GPIO_INPUT_ENABLE | GPIO_PULL_DOWN | x )
+#define WICED_GPIO_BUTTON_SETTINGS(x)                       ( GPIO_INPUT_ENABLE | GPIO_PULL_UP | x )
 /* if edge isn't specified (legacy/shared code), use GPIO_EN_INT_FALLING_EDGE */
-#define WICED_GPIO_BUTTON_SETTINGS_DEFAULT                  ( GPIO_INPUT_ENABLE | GPIO_PULL_DOWN | GPIO_EN_INT_FALLING_EDGE )
+#define WICED_GPIO_BUTTON_SETTINGS_DEFAULT                  ( GPIO_INPUT_ENABLE | GPIO_PULL_UP | GPIO_EN_INT_FALLING_EDGE )
 #define WICED_GPIO_BUTTON_DEFAULT_STATE                     GPIO_PIN_OUTPUT_LOW
 
 //P49_20706 (default)
 #define WICED_BUTTON_PRESSED_VALUE                 1
-#else
-//CYW920706WCDEVAL
-#define WICED_GPIO_BUTTON                                   WICED_P38      /* pin for button interrupts */
-#define WICED_GPIO_PIN_BUTTON                               WICED_GPIO_BUTTON
-#define WICED_GPIO_BUTTON_2                                 WICED_P34             //Set Button_2 Pin -> I2S_PCM_OUT(P29) ikh@221128
-#define WICED_GPIO_PIN_BUTTON_2                             WICED_GPIO_BUTTON_2
+#else //MOVON_BOARD
+#define WICED_GPIO_LED                                             WICED_P12
+#define WICED_GPIO_BUTTON_TOGGLE                                   WICED_P38            
+#define WICED_GPIO_PIN_BUTTON_TOGGLE                               WICED_GPIO_BUTTON
+#define WICED_GPIO_BUTTON_ONOFF                                    WICED_P34            
+#define WICED_GPIO_PIN_BUTTON_2                                    WICED_GPIO_BUTTON_ONOFF
 
 /* x can be GPIO_EN_INT_RISING_EDGE or GPIO_EN_INT_FALLING_EDGE or GPIO_EN_INT_BOTH_EDGE */
 #define WICED_GPIO_BUTTON_SETTINGS(x)                       ( GPIO_INPUT_ENABLE | GPIO_PULL_DOWN | x )
