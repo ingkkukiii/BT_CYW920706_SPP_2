@@ -214,6 +214,7 @@ static BYTE curr_blink_status = GPIO_PIN_OUTPUT_HIGH;
 static uint32_t prev_blink_interval = APP_TIMEOUT_IN_MILLI_SECONDS_250;
 static uint32_t curr_blink_interval = 0;
 
+wiced_timer_t seconds_timer_interrupt;                   /* app seconds timer */
 wiced_timer_t seconds_timer;                   /* app seconds timer */
 uint32_t wiced_timer_count       = 0;          /* number of seconds elapsed */
 
@@ -481,7 +482,7 @@ wiced_result_t app_management_callback(wiced_bt_management_evt_t event, wiced_bt
     /* Bluetooth  stack enabled */
     case BTM_ENABLED_EVT:
         application_init();
-
+        gpio_set_input_interrupt();
         if(app_read_led_onoff_nvram(LED_STATUS_NVRAM_ID, &curr_blink_status, sizeof(curr_blink_status)) != 0)
         {
             wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, curr_blink_status);
@@ -895,9 +896,16 @@ void puart_allow_interrupt()
  */
 void gpio_interrrupt_handler(void *data, uint8_t port_pin) //ikh@221128
 {
+    wiced_start_timer(&seconds_timer_interrupt, 50);
+    //WICED_BT_TRACE("app_management_callback %d\n", port_pin);
+     uint32_t curr = 0;
+    static  uint32_t cnt = 0;
+    curr = (wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_TOGGLE) | wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_ONOFF));
+    cnt++;
+    int aa = cnt%3;
 
-    WICED_BT_TRACE("app_management_callback %d\n", port_pin);
-
+     if ((curr == 1) && (aa == 1))
+    {
     switch (port_pin)
     {
         case WICED_GPIO_BUTTON_TOGGLE/* constant-expression */:
@@ -959,9 +967,24 @@ void gpio_interrrupt_handler(void *data, uint8_t port_pin) //ikh@221128
         default:
             break;
     }
-
+    }
 }
 
+void gpio_set_input_interrupt( )
+{
+
+     wiced_hal_gpio_configure_pin( WICED_GPIO_BUTTON_TOGGLE, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
+    wiced_hal_gpio_configure_pin( WICED_GPIO_BUTTON_ONOFF, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
+
+
+
+    wiced_hal_gpio_register_pin_for_interrupt( WICED_GPIO_BUTTON_TOGGLE, gpio_interrrupt_handler, NULL );
+    wiced_hal_gpio_register_pin_for_interrupt( WICED_GPIO_BUTTON_ONOFF, gpio_interrrupt_handler, NULL );
+
+    wiced_init_timer( &seconds_timer_interrupt, &gpio_interrrupt_handler, 0, WICED_MILLI_SECONDS_PERIODIC_TIMER );
+
+    
+}
 /* The function invoked on timeout of app seconds timer. */
 void seconds_app_timer_cb( uint32_t arg )
 {
