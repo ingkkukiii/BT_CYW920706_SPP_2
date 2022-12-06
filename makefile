@@ -104,7 +104,7 @@ TRANSPORT?=UART
 ENABLE_DEBUG?=0
 # SEND_DATA on INTERRUPT if defined, the app will send 1Meg of data on application button push (provided BSP supports application button).
 # otherwise TIMEOUT will be used, the app will send 4 bytes every second while session is up#
-# SEND_DATA?=INTERRUPT
+SEND_DATA?=INTERRUPT
 
 # LOOPBACK_DATA if enabled, the app sends back received data.
 LOOPBACK_DATA?=0
@@ -128,11 +128,11 @@ endif
 CY_APP_DEFINES+=\
   -DWICED_BT_TRACE_ENABLE
 
-# ifeq ($(SEND_DATA),INTERRUPT)
-# CY_APP_DEFINES+=-DSEND_DATA_ON_INTERRUPT=1
-# else
-# CY_APP_DEFINES+=-DSEND_DATA_ON_TIMEOUT=1
-# endif
+ifeq ($(SEND_DATA),INTERRUPT)
+CY_APP_DEFINES+=-DSEND_DATA_ON_INTERRUPT=1
+else
+CY_APP_DEFINES+=-DSEND_DATA_ON_TIMEOUT=1
+endif
 
 ifeq ($(LOOPBACK_DATA),1)
 CY_APP_DEFINES+=-DLOOPBACK_DATA=1

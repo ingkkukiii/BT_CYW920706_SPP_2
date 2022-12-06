@@ -450,3 +450,54 @@ WICE HCIUART에 추적 경로를 지정하면
 
 
 
+
+//button
+/* 버튼을 누를 때 한 번 동작하는 코드
+ * 버튼을 눌렀다 떼면 두 번 출력하는 것을 버튼을 누를 때만 동작하도록 변경
+ * currBtn 값이 1일 때만 동작하는 조건문을 추가하여 누를 때만 동작
+
+currBtn = 0 // 버튼 현재 상태 변수
+prevBtn = 0 // 버튼 이전 상태 변수
+
+int cnt = 1 // 버튼 누름 변수
+
+void loop(){
+
+currBtn = digitalRead(ButtonPin);
+
+if(currBtn != prevBtn)
+{
+	prevBtn = currBtn;
+	if (currBtn == 1)
+	{
+		cnt++;
+	}
+	delay(50);
+}
+}
+&&조건
+1. curr != prev : 스위치 값 변경
+2. millis() - swOnTime >= 50 : 스위치의 값이 변경된 지 50ms 지날 시 참
+ㄴ시간 - 스위치 눌린시간이 50ms초 보다 크다면 참
+
+     
+    BYTE curr = wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_TOGGLE);
+    unsigned long t_t = &seconds_timer;
+
+    WICED_BT_TRACE("curr value is %d!!!\n", curr);
+    // wiced_stop_timer( &seconds_timer );
+    // WICED_BT_TRACE("curr value is %d!!!\n", curr);
+
+
+
+    if ( (curr != prev) && wiced_start_timer( &seconds_timer, 50 ) - t_t  >= 50)
+
+    {
+        t_t = wiced_start_timer( &seconds_timer, 50 );
+        wiced_timer_count++;
+        prev = curr;
+            if (curr == 1)
+            {
+                WICED_BT_TRACE("sw on %d !!!\n", wiced_timer_count);
+            }
+    }
