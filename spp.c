@@ -154,6 +154,7 @@ wiced_bt_spp_reg_t spp_reg =
     spp_connection_down_callback,       /* SPP connection disconnected */
     spp_rx_data_callback,               /* Data packet received */
 };
+
 #if BTSTACK_VER < 0x03000001
 wiced_transport_buffer_pool_t*  host_trans_pool;
 #endif
@@ -165,6 +166,7 @@ uint32_t                        spp_tx_retry_count = 0;
 uint8_t pincode[4] = { 0x30, 0x30, 0x30, 0x30 };
 
 extern const wiced_bt_cfg_settings_t wiced_bt_cfg_settings;
+
 #if BTSTACK_VER < 0x03000001
 extern const wiced_bt_cfg_buf_pool_t wiced_bt_cfg_buf_pools[WICED_BT_CFG_NUM_BUF_POOLS];
 #endif
@@ -195,7 +197,7 @@ const wiced_transport_cfg_t transport_cfg =
         .buffer_count = 1
     },
 #endif
-    .p_status_handler    = NULL,
+    . p_status_handler   = NULL,
     .p_data_handler      = NULL,
     .p_tx_complete_cback = NULL
 };
@@ -223,8 +225,18 @@ uint32_t wiced_timer_count       = 0;                    /* number of seconds el
 /*******************************************************************
  * Function Prototypes
  ******************************************************************/
-//gpio
+
+// Function Prototypes IKH@221207
+static void seconds_interrupt_app_timer_cb( uint32_t arg );
+
+int app_write_led_nvram(int nvram_id, int data_len, void *p_data);
+int app_read_led_toggle_nvram(int nvram_id, void *p_data, int data_len);
+int app_read_led_onoff_nvram(int nvram_id, void *p_data, int data_len);
+
+
 static void seconds_app_timer_cb( uint32_t arg );
+
+
 
 //interrupt
 static void gpio_interrrupt_handler(void *data, uint8_t port_pin);
@@ -375,10 +387,6 @@ void application_init(void)
     /* Initializes the GPIO driver */
     wiced_bt_app_hal_init();
 
-    /* initial the led blink timer */
-    wiced_init_timer( &seconds_timer, &seconds_app_timer_cb, 0, WICED_MILLI_SECONDS_PERIODIC_TIMER );
-    wiced_init_timer( &seconds_timer_interrupt, &gpio_interrrupt_handler, 0, WICED_MILLI_SECONDS_PERIODIC_TIMER );            
-
     /**
      * This function turns off flow control, and enables Tx
      * and Rx. Echoes the input byte with increment by 1.
@@ -392,22 +400,24 @@ void application_init(void)
     wiced_hal_puart_print( "Type something! Keystrokes are echoed to the terminal ...\r\n");
 
 
+    /* initial the led blink timer */
+    wiced_init_timer( &seconds_timer, &seconds_app_timer_cb, 0, WICED_MILLI_SECONDS_PERIODIC_TIMER );
+    wiced_init_timer( &seconds_timer_interrupt, &seconds_interrupt_app_timer_cb, 0, WICED_MILLI_SECONDS_TIMER );    
+
     /* Configure LED PIN as input and initial outvalue as high
      * Configure GPIO PIN# as input, pull up and interrupt on rising edge and output value as high
      *  (pin should be configured before registering interrupt handler )
      */
 
-    /* GPIO PIN CONFIG - LED, Btn*/
+    /* GPIO PIN CONFIG - LED */
     wiced_hal_gpio_configure_pin( WICED_GPIO_LED, GPIO_OUTPUT_ENABLE, GPIO_PIN_OUTPUT_HIGH );
     wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, GPIO_PIN_OUTPUT_LOW);
 
+    /* GPIO Interrupt CONFIG - BTN */
     wiced_hal_gpio_configure_pin( WICED_GPIO_BUTTON_TOGGLE, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
     wiced_hal_gpio_configure_pin( WICED_GPIO_BUTTON_ONOFF, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
-
-    /* GPIO Interrupt CONFIG - Btn*/
     wiced_hal_gpio_register_pin_for_interrupt( WICED_GPIO_BUTTON_TOGGLE, gpio_interrrupt_handler, NULL );
     wiced_hal_gpio_register_pin_for_interrupt( WICED_GPIO_BUTTON_ONOFF, gpio_interrrupt_handler, NULL );
-
 
     /* Get the pin configuration set above */
     pin_config = wiced_hal_gpio_get_pin_config( WICED_GPIO_BUTTON_TOGGLE );
@@ -448,8 +458,8 @@ void application_init(void)
 #endif
 
 #if SEND_DATA_ON_INTERRUPT
-	wiced_hal_gpio_configure_pin(BUTTON_GPIO, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
-	wiced_hal_gpio_register_pin_for_interrupt(BUTTON_GPIO, app_interrupt_handler, NULL);
+	wiced_hal_gpio_configure_pin(WICED_GPIO_BUTTON_ONOFF, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
+	wiced_hal_gpio_register_pin_for_interrupt(WICED_GPIO_BUTTON_ONOFF, app_interrupt_handler, NULL);
     // init timer that we will use for the rx data flow control.
     wiced_init_timer(&app_tx_timer, app_tx_ack_timeout, 0, WICED_MILLI_SECONDS_TIMER);
 #endif
@@ -459,6 +469,27 @@ void application_init(void)
     wiced_init_timer(&spp_app_timer, app_timeout, 0, WICED_SECONDS_PERIODIC_TIMER);
     wiced_start_timer(&spp_app_timer, 1);
 #endif
+
+    /* LED STATUS ON NVRAM */
+    if(app_read_led_onoff_nvram(LED_STATUS_NVRAM_ID, &curr_blink_status, sizeof(curr_blink_status)) != 0)
+    {
+        wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, curr_blink_status);
+    }
+    else
+    {
+        WICED_BT_TRACE("LED Key retrieval failure\n");
+    }
+
+    if(app_read_led_toggle_nvram(LED_STATUS_NVRAM_ID, &curr_blink_interval, sizeof(curr_blink_interval)) != 0)
+    {
+
+        wiced_start_timer( &seconds_timer, curr_blink_interval );
+    }
+    else
+    {
+        WICED_BT_TRACE("LED Key retrieval failure\n");
+    }
+
 }
 
 /*
@@ -480,27 +511,7 @@ wiced_result_t app_management_callback(wiced_bt_management_evt_t event, wiced_bt
     /* Bluetooth  stack enabled */
     case BTM_ENABLED_EVT:
         application_init();
-
-        gpio_set_input_interrupt();
         
-        if(app_read_led_onoff_nvram(LED_STATUS_NVRAM_ID, &curr_blink_status, sizeof(curr_blink_status)) != 0)
-        {
-            wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, curr_blink_status);
-        }
-        else
-        {
-            WICED_BT_TRACE("LED Key retrieval failure\n");
-        }
-        if(app_read_led_toggle_nvram(LED_STATUS_NVRAM_ID, &curr_blink_interval, sizeof(curr_blink_interval)) != 0)
-        {
-
-            wiced_start_timer( &seconds_timer, curr_blink_interval );
-        }
-        else
-        {
-            WICED_BT_TRACE("LED Key retrieval failure\n");
-        }
-
         break;
 
     case BTM_DISABLED_EVT:
@@ -712,6 +723,7 @@ int app_write_nvram(int nvram_id, int data_len, void *p_data)
     WICED_BT_TRACE("NVRAM ID:%d written :%d bytes result:%d\n", nvram_id, bytes_written, result);
     return (bytes_written);
 }
+
 int app_write_led_nvram(int nvram_id, int data_len, void *p_data)
 {
     wiced_result_t  result;
@@ -760,7 +772,8 @@ int app_read_led_onoff_nvram(int nvram_id, void *p_data, int data_len)
     }
     return (read_bytes);
 }
-#if 1 //SEND_DATA_ON_INTERRUPT
+
+#if SEND_DATA_ON_INTERRUPT
 /*
  * Test function which sends as much data as possible.
  */
@@ -896,7 +909,7 @@ void puart_allow_interrupt()
  */
 void gpio_interrrupt_handler(void *data, uint8_t port_pin) //ikh@221128
 {
-    wiced_start_timer(&seconds_timer_interrupt, 50);
+    
     //WICED_BT_TRACE("app_management_callback %d\n", port_pin);
     //uint32_t curr = 0;
     //static  uint32_t cnt = 0;
@@ -904,87 +917,14 @@ void gpio_interrrupt_handler(void *data, uint8_t port_pin) //ikh@221128
     //cnt++;
     //int aa = cnt%3;
 
-     if (wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_TOGGLE) || wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_ONOFF))
+    if(wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_TOGGLE) || wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_ONOFF))
     {
-    switch (port_pin)
-    {
-        case WICED_GPIO_BUTTON_TOGGLE/* constant-expression */:
-            /* Get the status of interrupt on P# */
-            if ( wiced_hal_gpio_get_pin_interrupt_status( WICED_GPIO_BUTTON_TOGGLE ) )
-            {
-
-                /* Clear the gpio interrupt */
-                wiced_hal_gpio_clear_pin_interrupt_status( WICED_GPIO_BUTTON_TOGGLE );
-
-            }
-            /* stop the led blink timer */
-            wiced_stop_timer( &seconds_timer );
-
-            
-            /* toggle the blink time interval */
-            curr_blink_interval = (APP_TIMEOUT_IN_MILLI_SECONDS_250 == prev_blink_interval)?APP_TIMEOUT_IN_MILLI_SECONDS_1000:APP_TIMEOUT_IN_MILLI_SECONDS_250;
-
-            //wiced_start_timer( &seconds_timer, APP_TIMEOUT_IN_MILLI_SECONDS_50 );
-            wiced_start_timer( &seconds_timer, curr_blink_interval );
-            
-            app_write_led_nvram(LED_STATUS_NVRAM_ID, sizeof(curr_blink_interval), &curr_blink_interval);
-            
-            WICED_BT_TRACE("gpio_interrupt_handler : %d\n\r", curr_blink_interval);
-
-            //app_write_led_nvram(LED_TOGGLE_NVRAM_ID, sizeof(curr_blink_interval), &curr_blink_interval);
-            /* update the previous blink interval */
-            prev_blink_interval = curr_blink_interval;
-            
-
-            break;
-
-        case WICED_GPIO_BUTTON_ONOFF:
-
-             /* Get the status of interrupt on P# */
-            if ( wiced_hal_gpio_get_pin_interrupt_status( WICED_GPIO_BUTTON_ONOFF) )
-            {
-
-                /* Clear the gpio interrupt */
-                wiced_hal_gpio_clear_pin_interrupt_status( WICED_GPIO_BUTTON_ONOFF );
-
-            }
-            /* stop the led blink timer */
-            wiced_stop_timer( &seconds_timer );
-
-            /* toggle the blink time interval */
-            curr_blink_status = (GPIO_PIN_OUTPUT_LOW == prev_blink_status)?GPIO_PIN_OUTPUT_HIGH:GPIO_PIN_OUTPUT_LOW;
-
-            wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, curr_blink_status);
-            app_write_led_nvram(LED_STATUS_NVRAM_ID, sizeof(curr_blink_status), &curr_blink_status);
- 
-            WICED_BT_TRACE("gpio_interrupt_handler : %d\n\r", curr_blink_status);
-
-            prev_blink_status = curr_blink_status;
-
-
-            break;
-
-        default:
-            break;
-    }
-    }
-}
-
-void gpio_set_input_interrupt( )
-{
-
-    wiced_hal_gpio_configure_pin( WICED_GPIO_BUTTON_TOGGLE, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
-    wiced_hal_gpio_configure_pin( WICED_GPIO_BUTTON_ONOFF, WICED_GPIO_BUTTON_SETTINGS( GPIO_EN_INT_RISING_EDGE ), WICED_GPIO_BUTTON_DEFAULT_STATE );
-
-
-
-    wiced_hal_gpio_register_pin_for_interrupt( WICED_GPIO_BUTTON_TOGGLE, gpio_interrrupt_handler, NULL );
-    wiced_hal_gpio_register_pin_for_interrupt( WICED_GPIO_BUTTON_ONOFF, gpio_interrrupt_handler, NULL );
-
-    
-
+        wiced_start_timer(&seconds_timer_interrupt, 50);    
+    } 
+   
     
 }
+
 /* The function invoked on timeout of app seconds timer. */
 void seconds_app_timer_cb( uint32_t arg )
 {
@@ -998,5 +938,41 @@ void seconds_app_timer_cb( uint32_t arg )
     else
     {
         wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, GPIO_PIN_OUTPUT_HIGH);
+    }
+}
+
+void seconds_interrupt_app_timer_cb( uint32_t arg )
+{
+    
+    if(wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_TOGGLE))
+    {
+        WICED_BT_TRACE( "Toggle Btn Click!!!!\n");
+         /* toggle the blink time interval */
+            curr_blink_interval = (APP_TIMEOUT_IN_MILLI_SECONDS_250 == prev_blink_interval)?APP_TIMEOUT_IN_MILLI_SECONDS_1000:APP_TIMEOUT_IN_MILLI_SECONDS_250;
+
+            //wiced_start_timer( &seconds_timer, APP_TIMEOUT_IN_MILLI_SECONDS_50 );
+            wiced_start_timer( &seconds_timer, curr_blink_interval );
+            
+            app_write_led_nvram(LED_STATUS_NVRAM_ID, sizeof(curr_blink_interval), &curr_blink_interval);
+            
+            WICED_BT_TRACE("gpio_interrupt_handler : %d\n\r", curr_blink_interval);
+
+            //app_write_led_nvram(LED_TOGGLE_NVRAM_ID, sizeof(curr_blink_interval), &curr_blink_interval);
+            /* update the previous blink interval */
+            prev_blink_interval = curr_blink_interval;
+    }
+    else if(wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_ONOFF))
+    {
+            WICED_BT_TRACE( "OnOff Btn Click!!!!\n");
+            /* toggle the blink time interval */
+            curr_blink_status = (GPIO_PIN_OUTPUT_LOW == prev_blink_status)?GPIO_PIN_OUTPUT_HIGH:GPIO_PIN_OUTPUT_LOW;
+
+            wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, curr_blink_status);
+            app_write_led_nvram(LED_STATUS_NVRAM_ID, sizeof(curr_blink_status), &curr_blink_status);
+ 
+            WICED_BT_TRACE("gpio_interrupt_handler : %d\n\r", curr_blink_status);
+
+            prev_blink_status = curr_blink_status;
+
     }
 }
