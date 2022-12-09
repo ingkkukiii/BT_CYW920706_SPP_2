@@ -1,3 +1,42 @@
+/*221209정리*/
+전송 사용량에 대한 버퍼 풀을 만듭니다. 
+
+크기가 264바이트를 초과하는 패킷을 전송해야 하는 경우 애플리케이션은 버퍼 풀을 생성해야 합니다. 
+
+애플리케이션은 하중 길이를 버퍼 크기로 지정해야 한다. 
+
+전송은 전송 헤더 요구 사항과 애플리케이션 지정 페이로드 크기를 고려하여 원하는 크기의 풀을 생성하는 작업을 담당합니다. 
+
+생성된 풀 메모리를 해제하거나 해제할 수 없습니다.
+could set config parameter to 
+
+to enable interrupts for all edges, with a pull down,
+
+configures
+
+For example, to enable interrupts for all edges, with a pull-down, you could set config parameter to:
+
+configures HCI traces to be routed to the WICED HCI interface
+예를 들어 풀다운을 사용하여 모든 에지에 대해 인터럽트를 활성화하려면 구성 매개 변수를 다음과 같이 설정할 수 있습니다.
+
+HCI 트레이스가 WICEED HCI 인터페이스로 라우팅되도록 구성합니다.
+
+Note that this is independent of configuring the pin for interrupts; a call to configurePin() is also required (this call should be made before invoking this function)  .
+
+
+Also note that once registered, you CANNOT UNREGISTER;
+
+registration is meant to be a startup activity. 
+
+To stop receiving notifications, re-configure the pin and disable the interrupt using configurePin().
+이것은 인터럽트용 핀을 구성하는 것과는 무관하며, 핀()을 구성하기 위한 호출도 필요합니다(이 호출은 이 함수를 호출하기 전에 이루어져야 합니다).
+
+
+또한 일단 등록되면 등록을 취소할 수 없습니다.
+
+등록은 시작 활동을 의미합니다. 
+
+알림 수신을 중지하려면 핀을 다시 구성하고 configurePin()을 사용하여 인터럽트를 비활성화하십시오.
 /**2022.11.23
 * 정리
 *
