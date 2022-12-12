@@ -113,8 +113,12 @@
 #define WICED_EIR_BUF_MAX_SIZE              264
 
 #define SPP_NVRAM_ID                        WICED_NVRAM_VSID_START
+
 #define WICED_NVRAM_VSID_START_2            0x02
-#define LED_STATUS_NVRAM_ID                 WICED_NVRAM_VSID_START_2
+#define LED_TOGGLE_STATUS_NVRAM_ID                 WICED_NVRAM_VSID_START_2
+
+#define WICED_NVRAM_VSID_START_3            0x03
+#define LED_ONOFF_STATUS_NVRAM_ID                 WICED_NVRAM_VSID_START_3
 
 /* Max TX packet to be sent over SPP */
 #define MAX_TX_BUFFER                       1017
@@ -220,10 +224,10 @@ const wiced_transport_cfg_t transport_cfg =
 static uint8_t prev_blink_status = GPIO_PIN_OUTPUT_LOW; //타입변경 타입통일
 static uint8_t curr_blink_status = GPIO_PIN_OUTPUT_HIGH;
 static uint32_t prev_blink_interval = APP_TIMEOUT_IN_MILLI_SECONDS_250;
-static uint32_t curr_blink_interval = 0;
+static uint32_t curr_blink_interval; //ikh@221212
 
 wiced_timer_t seconds_timer_interrupt;                   /* app seconds timer */
-wiced_timer_t seconds_timer;                             /* app seconds timer */
+wiced_timer_t app_seconds_timer;                             /* app seconds timer */
 uint32_t wiced_timer_count       = 0;                    /* number of seconds elapsed */
 
 /*******************************************************************
@@ -231,7 +235,7 @@ uint32_t wiced_timer_count       = 0;                    /* number of seconds el
  ******************************************************************/
 
 //nvram
-static void ikh_led_status_on_nvram_config ();
+static void ikh_read_led_status_on_nvram_config ();
 
 static int                   app_write_led_nvram(int nvram_id, int data_len, void *p_data);
 static int                   app_read_led_toggle_nvram(int nvram_id, void *p_data, int data_len);
@@ -442,8 +446,12 @@ void application_init(void)
 #endif
 
     ikh_init_timer_config(); //ikh@221209
+
+
+
     ikh_gpio_config(); //ikh@221209
-    ikh_led_status_on_nvram_config(); //ikh@221209
+
+    ikh_read_led_status_on_nvram_config(); //ikh@221209
 }
 
 /*
@@ -671,7 +679,7 @@ static void spp_bt_remote_name_callback(wiced_bt_dev_remote_name_result_t *p_rem
  */
 int app_write_nvram(int nvram_id, int data_len, void *p_data)
 {
-    wiced_result_t  result;
+    static wiced_result_t  result;
     int             bytes_written = wiced_hal_write_nvram(nvram_id, data_len, (uint8_t*)p_data, &result);
 
     WICED_BT_TRACE("NVRAM ID:%d written :%d bytes result:%d\n", nvram_id, bytes_written, result);
@@ -685,8 +693,8 @@ int app_write_nvram(int nvram_id, int data_len, void *p_data)
  */
 int app_read_nvram(int nvram_id, void *p_data, int data_len)
 {
-    uint16_t        read_bytes = 0;
-    wiced_result_t  result;
+    static uint16_t        read_bytes = 0;
+    static wiced_result_t  result;
 
     if (data_len >= sizeof(wiced_bt_device_link_keys_t))
     {
@@ -842,6 +850,7 @@ void gpio_interrrupt_handler(void *data, uint8_t port_pin) //ikh@221128
 /* The function invoked on timeout of app seconds timer. */
 void seconds_app_timer_cb( uint32_t arg )
 {
+    //if(!wiced_is_timer_in_use(&app_seconds_timer)) wiced_stop_timer(&app_seconds_timer); //ikh@221212
     wiced_timer_count++;
     WICED_BT_TRACE( "seconds periodic timer count: %d s\n", wiced_timer_count );
 
@@ -861,58 +870,60 @@ void seconds_interrupt_app_timer_cb( uint32_t arg )
     if(wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_TOGGLE))
     {
         WICED_BT_TRACE( "Toggle Btn Click!!!!\n");
+        
          /* toggle the blink time interval */
-            curr_blink_interval = (APP_TIMEOUT_IN_MILLI_SECONDS_250 == prev_blink_interval)?APP_TIMEOUT_IN_MILLI_SECONDS_1000:APP_TIMEOUT_IN_MILLI_SECONDS_250;
+        curr_blink_interval = (APP_TIMEOUT_IN_MILLI_SECONDS_250 == prev_blink_interval)?APP_TIMEOUT_IN_MILLI_SECONDS_1000:APP_TIMEOUT_IN_MILLI_SECONDS_250;
 
-            //wiced_start_timer( &seconds_timer, APP_TIMEOUT_IN_MILLI_SECONDS_50 );
-            wiced_start_timer( &seconds_timer, curr_blink_interval );
-            
-            app_write_led_nvram(LED_STATUS_NVRAM_ID, sizeof(curr_blink_interval), &curr_blink_interval);
-            
-            WICED_BT_TRACE("gpio_interrupt_handler : %d\n\r", curr_blink_interval);
+        wiced_start_timer( &app_seconds_timer, curr_blink_interval );
+        
+        app_write_led_toggle_nvram(LED_TOGGLE_STATUS_NVRAM_ID, sizeof(curr_blink_interval), &curr_blink_interval);
+        
+        WICED_BT_TRACE("gpio_interrupt_handler : %d\n\r", curr_blink_interval);
 
-            //app_write_led_nvram(LED_TOGGLE_NVRAM_ID, sizeof(curr_blink_interval), &curr_blink_interval);
-            /* update the previous blink interval */
-            prev_blink_interval = curr_blink_interval;
+        //app_write_led_nvram(LED_TOGGLE_NVRAM_ID, sizeof(curr_blink_interval), &curr_blink_interval);
+        /* update the previous blink interval */
+        prev_blink_interval = curr_blink_interval;
+        
+        
     }
     else if(wiced_hal_gpio_get_pin_input_status(WICED_GPIO_BUTTON_ONOFF))
     {
-            if(wiced_is_timer_in_use(&seconds_timer)) wiced_stop_timer(&seconds_timer); //ikh@221209
-            WICED_BT_TRACE( "OnOff Btn Click!!!!\n");
-            /* toggle the blink time interval */
-            curr_blink_status = (GPIO_PIN_OUTPUT_LOW == prev_blink_status)?GPIO_PIN_OUTPUT_HIGH:GPIO_PIN_OUTPUT_LOW;
+        wiced_stop_timer(&app_seconds_timer); //ikh@221209
 
-            wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, curr_blink_status);
-            app_write_led_nvram(LED_STATUS_NVRAM_ID, sizeof(curr_blink_status), &curr_blink_status);
+        WICED_BT_TRACE( "OnOff Btn Click!!!!\n");
+        /* toggle the blink time interval */
+        curr_blink_status = (GPIO_PIN_OUTPUT_LOW == prev_blink_status)?GPIO_PIN_OUTPUT_HIGH:GPIO_PIN_OUTPUT_LOW;
 
-            WICED_BT_TRACE("gpio_interrupt_handler : %d\n\r", curr_blink_status);
+        wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, curr_blink_status);
+        
+        app_write_led_onoff_nvram(LED_ONOFF_STATUS_NVRAM_ID, sizeof(curr_blink_status), &curr_blink_status);
 
-            prev_blink_status = curr_blink_status;
+        WICED_BT_TRACE("gpio_interrupt_handler : %d\n\r", curr_blink_status);
+
+        prev_blink_status = curr_blink_status;
             
     }
 }
 
 
-void ikh_led_status_on_nvram_config ()
+void ikh_read_led_status_on_nvram_config ()
 {
+    
     /* LED STATUS ON NVRAM */
-    if(app_read_led_onoff_nvram(LED_STATUS_NVRAM_ID, &curr_blink_status, sizeof(curr_blink_status)) != 0)
+    if(app_read_led_onoff_nvram(LED_ONOFF_STATUS_NVRAM_ID, &curr_blink_status, sizeof(curr_blink_status)) != 0)
     {
+        WICED_BT_TRACE("Read *ONOFF* STATUS ON NVRAM %d !!!\n", curr_blink_status);
+        wiced_stop_timer(&app_seconds_timer); //ikh@221212 : nvram read issue
         wiced_hal_gpio_set_pin_output( WICED_GPIO_LED, curr_blink_status);
     }
-    else
+    else if(app_read_led_toggle_nvram(LED_TOGGLE_STATUS_NVRAM_ID, &curr_blink_interval, sizeof(curr_blink_interval)) != 0)
     {
-        WICED_BT_TRACE("LED Key retrieval failure\n");
-    }
-
-    if(app_read_led_toggle_nvram(LED_STATUS_NVRAM_ID, &curr_blink_interval, sizeof(curr_blink_interval)) != 0)
-    {
-
-        wiced_start_timer( &seconds_timer, curr_blink_interval );
+        WICED_BT_TRACE("READ *TOGGLE* STATUS ON NVRAM %d !!!\n", curr_blink_interval);
+        wiced_start_timer( &app_seconds_timer, curr_blink_interval );
     }
     else
     {
-        WICED_BT_TRACE("LED Key retrieval failure\n");
+        WICED_BT_TRACE("\n**NO READ_LED_STATUS_NVRAM, LED KEY RETRIEVAL FAULURE!!!**\n");
     }
 }
 
@@ -944,39 +955,50 @@ void ikh_gpio_config()
 void ikh_init_timer_config()
 {
     /* initial the led blink timer */
-    wiced_init_timer( &seconds_timer, &seconds_app_timer_cb, 0, WICED_MILLI_SECONDS_PERIODIC_TIMER );
+    wiced_init_timer( &app_seconds_timer, &seconds_app_timer_cb, 0, WICED_MILLI_SECONDS_PERIODIC_TIMER );
     wiced_init_timer( &seconds_timer_interrupt, &seconds_interrupt_app_timer_cb, 0, WICED_MILLI_SECONDS_TIMER );    
 }
 
-int app_write_led_nvram(int nvram_id, int data_len, void *p_data)
+int app_write_led_toggle_nvram(int nvram_id, int data_len, void *p_data)
 {
-    wiced_result_t  result;
-    int             bytes_written = wiced_hal_write_nvram(nvram_id, data_len, (uint8_t*)p_data, &result);
+    static wiced_result_t  result;
+    int             bytes_written2 = wiced_hal_write_nvram(nvram_id, data_len, (uint8_t*)p_data, &result);
+    wiced_hal_delete_nvram(LED_ONOFF_STATUS_NVRAM_ID, &result);
+    WICED_BT_TRACE("NVRAM ID:%d written :%d bytes result:%d\n", nvram_id, bytes_written2, result);
+    return (bytes_written2);
+}
 
-    WICED_BT_TRACE("NVRAM ID:%d written :%d bytes result:%d\n", nvram_id, bytes_written, result);
-    return (bytes_written);
+int app_write_led_onoff_nvram(int nvram_id, int data_len, void *p_data)
+{
+    static wiced_result_t  result;
+    int             bytes_written3 = wiced_hal_write_nvram(nvram_id, data_len, (uint8_t*)p_data, &result);
+    wiced_hal_delete_nvram(LED_TOGGLE_STATUS_NVRAM_ID, &result);
+    WICED_BT_TRACE("NVRAM ID:%d written :%d bytes result:%d\n", nvram_id, bytes_written3, result);
+    return (bytes_written3);
+}
+
+int app_read_led_onoff_nvram(int nvram_id, void *p_data, int data_len)
+{
+    static uint16_t        read_bytes = 0;
+    static wiced_result_t  result;
+
+    if (data_len >= sizeof(curr_blink_status)) //ikh@221212 code error curr_blink_interval -> curr_blink_status
+    {
+        read_bytes = wiced_hal_read_nvram(nvram_id, sizeof(curr_blink_status), p_data, &result); //ikh@221212 code error
+        WICED_BT_TRACE("Read_Led_OnOff_Nvram, NVRAM ID:%d read out of %d bytes:%d result:%d\n", nvram_id, sizeof(curr_blink_status), read_bytes, result); //ikh@221212 code error
+    }
+    return (read_bytes);
 }
 int app_read_led_toggle_nvram(int nvram_id, void *p_data, int data_len)
 {
-    uint16_t        read_bytes = 0;
-    wiced_result_t  result;
+    static uint16_t        read_bytes = 0;
+    static wiced_result_t  result;
 
     if (data_len >= sizeof(curr_blink_interval))
     {
         read_bytes = wiced_hal_read_nvram(nvram_id, sizeof(curr_blink_interval), p_data, &result);
-        WICED_BT_TRACE("NVRAM ID:%d read out of %d bytes:%d result:%d\n", nvram_id, sizeof(curr_blink_status), read_bytes, result);
+        WICED_BT_TRACE("Read_Led_Toggle_Nvram, NVRAM ID:%d read out of %d bytes:%d result:%d\n", nvram_id, sizeof(curr_blink_interval), read_bytes, result);
     }
     return (read_bytes);
 }
-int app_read_led_onoff_nvram(int nvram_id, void *p_data, int data_len)
-{
-    uint16_t        read_bytes = 0;
-    wiced_result_t  result;
 
-    if (data_len >= sizeof(curr_blink_interval))
-    {
-        read_bytes = wiced_hal_read_nvram(nvram_id, sizeof(curr_blink_interval), p_data, &result);
-        WICED_BT_TRACE("NVRAM ID:%d read out of %d bytes:%d result:%d\n", nvram_id, sizeof(curr_blink_interval), read_bytes, result);
-    }
-    return (read_bytes);
-}
