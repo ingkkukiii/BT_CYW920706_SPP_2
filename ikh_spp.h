@@ -20,6 +20,16 @@
 
 #include "wiced_bt_types.h"
 #include "wiced_hal_gpio.h"
+#include "wiced_hal_nvram.h"
+
+/* ikh@221213 : SPP_NVRAM_ID VSID */
+#define SPP_NVRAM_ID                        WICED_NVRAM_VSID_START
+
+#define WICED_NVRAM_VSID_START_2            0x02
+#define LED_TOGGLE_STATUS_NVRAM_ID          WICED_NVRAM_VSID_START_2
+
+#define WICED_NVRAM_VSID_START_3            0x03
+#define LED_ONOFF_STATUS_NVRAM_ID           WICED_NVRAM_VSID_START_3
 
 extern void platform_led_init( void );
 extern void platform_puart_flow_control_init( void );
@@ -61,6 +71,7 @@ typedef enum
 #define WICED_GPIO_PIN_BUTTON_TOGGLE                               WICED_GPIO_BUTTON
 #define WICED_GPIO_BUTTON_ONOFF                                    WICED_P34            
 #define WICED_GPIO_PIN_BUTTON_2                                    WICED_GPIO_BUTTON_ONOFF
+#define WICED_GPIO_PUART_CTS                                       WICED_P03
 
 /* x can be GPIO_EN_INT_RISING_EDGE or GPIO_EN_INT_FALLING_EDGE or GPIO_EN_INT_BOTH_EDGE */
 #define WICED_GPIO_BUTTON_SETTINGS(x)                       ( GPIO_INPUT_ENABLE | GPIO_PULL_DOWN | x )
