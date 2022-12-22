@@ -31,8 +31,11 @@
 #define WICED_NVRAM_VSID_START_3            0x03
 #define LED_ONOFF_STATUS_NVRAM_ID           WICED_NVRAM_VSID_START_3
 
-extern void platform_led_init( void );
-extern void platform_puart_flow_control_init( void );
+#define WICED_NVRAM_VSID_START_4            0x04
+#define LED_STATUS_NVRAM_ID                 WICED_NVRAM_VSID_START_4
+
+//extern void platform_led_init( void );
+//extern void platform_puart_flow_control_init( void );
 
 typedef struct
 {
@@ -141,5 +144,35 @@ void unbond_P35(void);
 /* @} */
 
 
+wiced_led_config_t platform_led2[] =
+{
+    {
+            .led_gpio = WICED_GPIO_LED,
+            .led_config = ( GPIO_OUTPUT_ENABLE),
+            .led_default_state = GPIO_PIN_OUTPUT_HIGH,
+    },
+    {
+            .led_gpio = WICED_GPIO_BUTTON_TOGGLE,
+            .led_config = WICED_GPIO_BUTTON_SETTINGS_DEFAULT,
+            .led_default_state = WICED_GPIO_BUTTON_DEFAULT_STATE,
+    },
+    {
+            .led_gpio = WICED_GPIO_BUTTON_ONOFF,
+            .led_config = WICED_GPIO_BUTTON_SETTINGS_DEFAULT,
+            .led_default_state = WICED_GPIO_BUTTON_DEFAULT_STATE,
+    }
+};
 
+/* Initialize LEDs and turn off */
+void platform_led_init2( void )
+{
+    uint32_t i = 0;
+
+    /* Initialize LEDs and turn off by default */
+    for(i=0; i < (sizeof(platform_led2)/sizeof(wiced_led_config_t)); i++)
+    {
+        //WICED_BT_TRACE("Test LED init Func...\n");
+        wiced_hal_gpio_configure_pin( platform_led2[i].led_gpio, platform_led2[i].led_config, platform_led2[i].led_default_state);
+    }
+}
 #endif /* IKH_SPP_H_ */
