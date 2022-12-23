@@ -1,4 +1,36 @@
- 
+wiced_bt_dev_bredr_io_caps_rsp_t
+
+enum wiced_bt_management_evt_e {
+    BTM_PAIRING_IO_CAPABILITIES_BR_EDR_REQUEST_EVT, /**< Requesting IO capabilities for BR/EDR pairing. Event data: #wiced_bt_dev_bredr_io_caps_req_t */
+    BTM_PAIRING_IO_CAPABILITIES_BR_EDR_RESPONSE_EVT,/**< Received IO capabilities response for BR/EDR pairing. Event data: #wiced_bt_dev_bredr_io_caps_rsp_t */
+}
+typedef uint8_t wiced_bt_management_evt_t;          /**< Bluetooth management events (see #wiced_bt_management_evt_e) */
+
+/** Data type for IO capabalities response (BTM_PAIRING_IO_CAPABILITIES_BR_EDR_RESPONSE_EVT) */
+typedef struct
+{
+    wiced_bt_device_address_t   bd_addr;                /**< Peer address */ --BD ADDR
+    wiced_bt_dev_io_cap_t       io_cap;                 /**< Peer IO capabilities */ --IO CAP (DISPLAY)
+    wiced_bt_dev_oob_data_t     oob_data;               /**< OOB data present at peer device for the local device */ --OOB
+    wiced_bt_dev_auth_req_t     auth_req;               /**< Authentication required for peer device */ --중간자공격
+} wiced_bt_dev_bredr_io_caps_rsp_t;
+
+/** Structure definitions for Bluetooth Management (wiced_bt_management_cback_t) event notifications */
+typedef union
+{
+    wiced_bt_dev_bredr_io_caps_req_t    pairing_io_capabilities_br_edr_request; /**< Data for BTM_PAIRING_IO_CAPABILITIES_BR_EDR_REQUEST_EVT */
+    wiced_bt_dev_bredr_io_caps_rsp_t    pairing_io_capabilities_br_edr_response;/**< Data for BTM_PAIRING_IO_CAPABILITIES_BR_EDR_RESPONSE_EVT */
+    wiced_bt_dev_ble_io_caps_req_t      pairing_io_capabilities_ble_request;    /**< Data for BTM_PAIRING_IO_CAPABILITIES_BLE_REQUEST_EVT */
+} wiced_bt_management_evt_data_t;
+
+/*
+ * EVENT
+ * 링크키요청(19) > IOCAP 응답?(9) > if x > IOCAP 요청(8) > USER 확인 요청(4) > (USER 확인 BTN) > 페어링 완성(11) > 
+ * 
+ * NVRAM
+ * R
+ */
+........................................................................................................................................................ 
 전송 사용량에 대한 버퍼 풀을 만듭니다. 
 
 크기가 264바이트를 초과하는 패킷을 전송해야 하는 경우 애플리케이션은 버퍼 풀을 생성해야 합니다. 
