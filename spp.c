@@ -376,8 +376,8 @@ void application_init(void)
     /* Initialize the RTC block */
     rtc_init();
 
-    /* Initializes the GPIO driver */
-    wiced_bt_app_hal_init();
+    // /* Initializes the GPIO driver */ //중복코드 wiced_bt_app_init();
+    // wiced_bt_app_hal_init();
 
     /**
      * This function turns off flow control, and enables Tx
